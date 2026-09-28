@@ -1,0 +1,24 @@
+{
+  "name": "caisse-bzh-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "caisse.bzh — la caisse qui suit tout votre service (application de bureau)",
+  "author": { "name": "Inklura by Webdesign29", "email": "bonjour@caisse.bzh", "url": "https://caisse.bzh/" },
+  "homepage": "https://caisse.bzh/",
+  "repository": { "type": "git", "url": "https://github.com/benfavre/caisse-bzh-desktop.git" },
+  "main": "electron/main.mjs",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test tests/*.test.mjs",
+    "pack": "electron-builder --config electron-builder.config.cjs --dir --publish never",
+    "dist": "electron-builder --config electron-builder.config.cjs --publish never"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  },
+  "devDependencies": {
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3"
+  }
+}
