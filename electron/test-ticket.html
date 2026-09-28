@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>caisse.bzh — ticket de test</title>
+<style>
+  @page{margin:0}
+  html,body{margin:0;background:#fff;color:#000}
+  body{width:72mm;padding:4mm 3mm;font:12px/1.35 "DejaVu Sans Mono",Consolas,Menlo,monospace}
+  .c{text-align:center}
+  h1{font:800 17px/1.1 system-ui,sans-serif;margin:0 0 2mm;letter-spacing:-.02em}
+  hr{border:0;border-top:1px dashed #000;margin:3mm 0}
+  .row{display:flex;justify-content:space-between;gap:3mm}
+  .big{font-size:15px;font-weight:700}
+  .ruler{display:flex;justify-content:space-between;font-size:10px}
+</style>
+</head>
+<body>
+  <div class="c"><h1>caisse⁘bzh</h1><div>TICKET DE TEST</div><div>Aucune valeur fiscale</div></div>
+  <hr>
+  <div class="row"><span>Imprimante</span><span id="printer"></span></div>
+  <div class="row"><span>Application</span><span id="version"></span></div>
+  <div class="row"><span>Date</span><span id="date"></span></div>
+  <hr>
+  <div class="row"><span>1 Café</span><span>2,00 €</span></div>
+  <div class="row"><span>2 Crêpes beurre-sucre</span><span>9,00 €</span></div>
+  <div class="row big"><span>TOTAL</span><span>11,00 €</span></div>
+  <hr>
+  <div class="ruler"><span>|</span><span>largeur utile 72 mm</span><span>|</span></div>
+  <div class="c" style="margin-top:3mm">Accents : é è à ç ô ù € ⁘<br>Si tout est lisible, l'imprimante est prête.</div>
+<script>
+  var q = new URLSearchParams(location.search);
+  document.getElementById("printer").textContent = q.get("printer") || "boîte d'impression";
+  document.getElementById("version").textContent = q.get("v") || "";
+  document.getElementById("date").textContent = new Date().toLocaleString("fr-FR");
+</script>
+</body>
+</html>

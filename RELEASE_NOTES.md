@@ -1,7 +1,8 @@
-# caisse.bzh 1.0.0 — première version de bureau
+# caisse.bzh 1.1.0
 
-- La caisse caisse.bzh dans sa propre fenêtre, sur Windows, macOS et Linux.
-- **Impression silencieuse des tickets** : choisissez votre imprimante dans le menu « Imprimante », les tickets et rapports Z s'impriment sans boîte de dialogue.
-- **Mode kiosque** au démarrage (menu « Affichage ») pour les postes dédiés.
-- **Mises à jour automatiques** : téléchargées en arrière-plan, installées à la fermeture de l'application — jamais pendant un service.
-- Écran « hors connexion » qui se reconnecte tout seul.
+- **Ticket de test** (menu *Imprimante*, Ctrl+Maj+P, ou depuis le tableau de bord) : vérifie l'imprimante, la largeur utile et les accents avant le service.
+- **Lancer au démarrage de l'ordinateur** (Windows, macOS, AppImage Linux) et **Garder l'écran allumé** (activé par défaut), dans le nouveau menu *Poste*.
+- La fenêtre et le **zoom** sont retenus d'un lancement à l'autre (utile sur écran tactile) ; une fenêtre restée sur un second écran débranché revient sur l'écran principal.
+- **Reprise automatique** si la page plante : la caisse se recharge d'elle-même.
+- Notification quand une mise à jour est prête, puis quand elle est installée ; état de la mise à jour visible dans le menu.
+- Aide : copier les informations de diagnostic, écrire au support avec ces informations, ouvrir le journal de l'application.

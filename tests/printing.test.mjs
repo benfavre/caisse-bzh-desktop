@@ -15,9 +15,31 @@ test("silent printing only on a chosen printer that exists", () => {
 test("settings persist and a corrupt file falls back to defaults", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "cbzh-"));
   const f = path.join(dir, "settings.json");
-  assert.deepEqual(await loadSettings(f), { printer: "", kiosk: false });
+  assert.equal((await loadSettings(f)).printer, "");
   await saveSettings(f, { printer: "EPSON_TM_T20", kiosk: true, junk: 1 });
-  assert.deepEqual(await loadSettings(f), { printer: "EPSON_TM_T20", kiosk: true });
+  assert.deepEqual([(await loadSettings(f)).printer, (await loadSettings(f)).kiosk], ["EPSON_TM_T20", true]);
   await writeFile(f, "{not json");
-  assert.deepEqual(await loadSettings(f), { printer: "", kiosk: false });
+  assert.equal((await loadSettings(f)).printer, "");
+});
+test("new settings are validated and default safely", async () => {
+  const { cleanSettings } = await import("../electron/printing.mjs");
+  const c = cleanSettings({ keepAwake: "no", zoom: 99, autostart: 1, lastVersion: "1.0.0; rm -rf /", bounds: { x: 0, y: 0, width: 50, height: 50 } });
+  assert.equal(c.keepAwake, true, "screen kept awake unless explicitly disabled");
+  assert.equal(c.zoom, 3);
+  assert.equal(c.autostart, false);
+  assert.equal(c.lastVersion, "");
+  assert.equal(c.bounds, null, "absurd window size ignored");
+  assert.deepEqual(cleanSettings({ bounds: { x: 10, y: 20, width: 1200, height: 800, maximized: true } }).bounds, { x: 10, y: 20, width: 1200, height: 800, maximized: true });
+});
+test("saved window reopens only on a connected screen", async () => {
+  const { visibleBounds } = await import("../electron/printing.mjs");
+  const b = { x: 2000, y: 100, width: 1200, height: 800, maximized: false };
+  assert.equal(visibleBounds(b, [{ x: 0, y: 0, width: 1920, height: 1080 }]), null, "second screen unplugged");
+  assert.deepEqual(visibleBounds(b, [{ x: 0, y: 0, width: 1920, height: 1080 }, { x: 1920, y: 0, width: 1920, height: 1080 }]), b);
+});
+test("linux autostart entry quotes the AppImage path", async () => {
+  const { autostartDesktopEntry } = await import("../electron/printing.mjs");
+  const e = autostartDesktopEntry('/home/a b/caisse "x" $HOME.AppImage');
+  assert.match(e, /^Exec="\/home\/a b\/caisse \\"x\\" \\\$HOME\.AppImage"$/m);
+  assert.match(e, /^Type=Application$/m);
 });
