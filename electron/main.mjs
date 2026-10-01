@@ -51,9 +51,18 @@ async function update(patch) {
   return settings;
 }
 
-function notify(title, body) {
+const CHANGELOG_URL = APP_ORIGIN + "/nouveautes/application-de-bureau";
+// Held until clicked or closed: a collected Notification drops its click handler.
+const shown = new Set();
+
+function notify(title, body, onClick) {
   try {
-    if (Notification.isSupported()) new Notification({ title, body, silent: true }).show();
+    if (!Notification.isSupported()) return;
+    const n = new Notification({ title, body, silent: true });
+    shown.add(n);
+    n.on("click", () => { shown.delete(n); onClick?.(); });
+    n.on("close", () => shown.delete(n));
+    n.show();
   } catch {}
 }
 
@@ -262,6 +271,7 @@ async function buildMenu() {
       submenu: [
         { label: "Centre d'aide", click: go("aide") },
         { label: "Guide de l'application de bureau", click: () => shell.openExternal(APP_ORIGIN + "/docs/application-de-bureau") },
+        { label: "Nouveautés de l'application", click: () => shell.openExternal(CHANGELOG_URL) },
         { label: "Nous écrire", click: () => shell.openExternal("mailto:bonjour@caisse.bzh?subject=" + encodeURIComponent("caisse.bzh " + app.getVersion()) + "&body=" + encodeURIComponent("\n\n---\n" + diagnostics())) },
         { type: "separator" },
         { label: "Copier les informations de diagnostic", click: () => { clipboard.writeText(diagnostics()); notify("caisse.bzh", "Informations copiées"); } },
@@ -400,7 +410,7 @@ app.whenReady().then(async () => {
   if (settings.lastVersion !== app.getVersion()) await update({ lastVersion: app.getVersion() });
   if (updatedFrom) {
     log.info("updated", updatedFrom, "->", app.getVersion());
-    notify("caisse.bzh est à jour", "Version " + app.getVersion() + " installée (précédente : " + updatedFrom + ").");
+    notify("caisse.bzh est à jour", "Version " + app.getVersion() + " installée (précédente : " + updatedFrom + "). Cliquez pour voir les nouveautés.", () => shell.openExternal(CHANGELOG_URL));
   }
 
   // The till needs no camera, microphone, geolocation or notifications; only
