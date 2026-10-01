@@ -10,6 +10,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   autostart: false,
   keepAwake: true,
   zoom: 1,
+  startPage: "caisse",
   bounds: null,
   lastVersion: "",
 });
@@ -33,6 +34,7 @@ export function cleanSettings(raw) {
     autostart: r.autostart === true,
     keepAwake: r.keepAwake !== false,
     zoom: Math.round(zoom * 100) / 100,
+    startPage: ["caisse", "cuisine", "tableau"].includes(r.startPage) ? r.startPage : "caisse",
     bounds: cleanBounds(r.bounds),
     lastVersion: typeof r.lastVersion === "string" && /^[0-9A-Za-z.+-]{1,40}$/.test(r.lastVersion) ? r.lastVersion : "",
   };

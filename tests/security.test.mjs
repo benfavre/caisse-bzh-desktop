@@ -31,3 +31,10 @@ test("web permissions: clipboard write and fullscreen for caisse.bzh only", asyn
   assert.equal(permissionAllowed("clipboard-sanitized-write", "file:///x/offline.html"), false);
   for (const p of ["media", "geolocation", "notifications", "clipboard-read", "openExternal"]) assert.equal(permissionAllowed(p, "https://caisse.bzh"), false, p);
 });
+test("start page: caisse by default, cuisine for a kitchen screen", async () => {
+  const { startUrl } = await import("../electron/security.mjs");
+  assert.equal(startUrl("cuisine"), "https://caisse.bzh/app/pos/kitchen");
+  assert.equal(startUrl("tableau"), "https://caisse.bzh/app");
+  assert.equal(startUrl("fiscal"), START_URL, "only the listed start pages");
+  assert.equal(startUrl(undefined), START_URL);
+});

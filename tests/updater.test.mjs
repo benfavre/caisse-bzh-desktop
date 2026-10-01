@@ -102,3 +102,18 @@ test("night install: silent, only between 3:00 and 5:00 after 30 idle minutes", 
   assert.deepEqual(args, [true, true], "no installer window, app reopens");
   c.dispose();
 });
+test("unsigned macOS: newer release detected, pointed to the download page", async () => {
+  const { isNewerVersion } = await import("../electron/updater.mjs");
+  assert.ok(isNewerVersion("v1.3.0", "1.2.0"));
+  assert.ok(isNewerVersion("1.10.0", "1.9.9"), "numeric, not lexical");
+  assert.equal(isNewerVersion("v1.2.0", "1.2.0"), false);
+  assert.equal(isNewerVersion("v1.1.9", "1.2.0"), false);
+  assert.equal(isNewerVersion("v2.0.0-beta.1", "1.2.0"), false, "prereleases ignored");
+  assert.equal(isNewerVersion("", "1.2.0"), false);
+  const c = new UpdateController(new EventEmitter(), { enabled: false, reason: "unsigned" });
+  c.setManual("1.3.0");
+  assert.equal(c.snapshot().phase, "available");
+  assert.equal(c.snapshot().version, "1.3.0");
+  assert.equal(c.install().reason, "not-ready", "never installs itself");
+  c.dispose();
+});

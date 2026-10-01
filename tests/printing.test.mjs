@@ -43,3 +43,9 @@ test("linux autostart entry quotes the AppImage path", async () => {
   assert.match(e, /^Exec="\/home\/a b\/caisse \\"x\\" \\\$HOME\.AppImage"$/m);
   assert.match(e, /^Type=Application$/m);
 });
+test("start page setting is validated", async () => {
+  const { cleanSettings } = await import("../electron/printing.mjs");
+  assert.equal(cleanSettings({}).startPage, "caisse");
+  assert.equal(cleanSettings({ startPage: "cuisine" }).startPage, "cuisine");
+  assert.equal(cleanSettings({ startPage: "../evil" }).startPage, "caisse");
+});

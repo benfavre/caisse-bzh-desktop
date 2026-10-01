@@ -9,11 +9,12 @@ contextBridge.exposeInMainWorld("caisseDesktop", {
   printers: () => ipcRenderer.invoke("print:printers"),
   setPrinter: (name) => ipcRenderer.invoke("print:set-printer", String(name || "")),
   printTest: () => ipcRenderer.invoke("print:test"),
-  // { autostart?, keepAwake?, kiosk? } — booleans only, re-validated in main.
+  // { autostart?, keepAwake?, kiosk?, startPage? } — re-validated in main.
   setOptions: (patch) => ipcRenderer.invoke("desktop:set", {
     autostart: typeof patch?.autostart === "boolean" ? patch.autostart : undefined,
     keepAwake: typeof patch?.keepAwake === "boolean" ? patch.keepAwake : undefined,
     kiosk: typeof patch?.kiosk === "boolean" ? patch.kiosk : undefined,
+    startPage: typeof patch?.startPage === "string" ? patch.startPage : undefined,
   }),
   updateState: () => ipcRenderer.invoke("updates:state"),
   checkUpdates: () => ipcRenderer.invoke("updates:check"),

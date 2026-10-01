@@ -54,3 +54,9 @@ export function shortcutUrl(name) {
   const p = SHORTCUTS[name];
   return p ? APP_ORIGIN + p : null;
 }
+
+// Page a till opens on (a kitchen screen opens on Cuisine).
+export const START_PAGES = ["caisse", "cuisine", "tableau"];
+export function startUrl(name) {
+  return START_PAGES.includes(name) ? shortcutUrl(name) : START_URL;
+}

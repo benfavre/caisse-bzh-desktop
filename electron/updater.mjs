@@ -119,6 +119,11 @@ export class UpdateController extends EventEmitter {
     this.updater.quitAndInstall(silent, true);
     return { ok: true };
   }
+  // Unsigned macOS builds cannot install updates: they only learn that a newer
+  // version exists and point to the download page.
+  setManual(version) {
+    this.set({ phase: "available", version, percent: 0, message: "Téléchargez la version " + version + " sur caisse.bzh/telecharger." });
+  }
   start() {
     if (!this.enabled) return;
     this.startTimer = setTimeout(() => this.check(), 15000);
@@ -143,4 +148,16 @@ export const NIGHT_IDLE_SECONDS = 30 * 60;
 export function nightlyInstallDue(date, idleSeconds) {
   const h = date.getHours();
   return h >= NIGHT_START && h < NIGHT_END && Number(idleSeconds) >= NIGHT_IDLE_SECONDS;
+}
+
+// true when release tag `latest` (e.g. "v1.3.0" or "1.3.0") is newer than `current`.
+export function isNewerVersion(latest, current) {
+  const parse = (v) => {
+    const m = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(String(v || "").trim());
+    return m ? m.slice(1).map(Number) : null;
+  };
+  const a = parse(latest), b = parse(current);
+  if (!a || !b) return false;
+  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] > b[i];
+  return false;
 }

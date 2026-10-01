@@ -12,8 +12,8 @@ import { existsSync } from "node:fs";
 import { readFile, writeFile, unlink, mkdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import electronUpdater from "electron-updater";
-import { START_URL, APP_ORIGIN, isInAppUrl, isAppPage, externalUrl, shortcutUrl, permissionAllowed } from "./security.mjs";
-import { UpdateController, nightlyInstallDue } from "./updater.mjs";
+import { APP_ORIGIN, isInAppUrl, isAppPage, externalUrl, shortcutUrl, permissionAllowed, startUrl } from "./security.mjs";
+import { UpdateController, nightlyInstallDue, isNewerVersion } from "./updater.mjs";
 import { loadSettings, saveSettings, printOptions, visibleBounds, autostartDesktopEntry, DEFAULT_SETTINGS } from "./printing.mjs";
 import { createLogger } from "./log.mjs";
 
@@ -26,6 +26,8 @@ let retryTimer = null;
 let awakeId = null;
 let boundsTimer = null;
 let crashes = [];
+let lastAppUrl = "";
+let frozenTimer = null;
 let log = { info() {}, warn() {}, error() {}, debug() {}, file: "" };
 
 // A second launch only brings the running till to the front; it must not go on
@@ -55,6 +57,10 @@ function notify(title, body) {
   } catch {}
 }
 
+// Where to come back to after a crash, a freeze or a network outage: the page
+// the till was on (a kitchen screen stays on Cuisine), else its start page.
+const recoverUrl = () => lastAppUrl || startUrl(settings.startPage);
+
 function showOffline() {
   if (!win || win.isDestroyed()) return;
   win.loadFile(path.join(here, "offline.html")).catch(() => {});
@@ -69,7 +75,7 @@ function showOffline() {
       res.on("error", () => {});
       if (res.statusCode < 500) {
         clearInterval(retryTimer);
-        win?.loadURL(START_URL).catch(() => {});
+        win?.loadURL(recoverUrl()).catch(() => {});
       }
     });
     req.on("error", () => {});
@@ -139,7 +145,7 @@ function diagnostics() {
     "caisse.bzh " + app.getVersion() + " (Electron " + process.versions.electron + ")",
     "Système : " + process.platform + " " + os.release() + " " + process.arch + (process.env.APPIMAGE ? " · AppImage" : ""),
     "Imprimante : " + (settings.printer || "boîte d'impression"),
-    "Kiosque : " + (settings.kiosk ? "oui" : "non") + " · Démarrage auto : " + (settings.autostart ? "oui" : "non") + " · Écran allumé : " + (settings.keepAwake ? "oui" : "non") + " · Zoom : " + Math.round(settings.zoom * 100) + " %",
+    "Kiosque : " + (settings.kiosk ? "oui" : "non") + " · Démarrage auto : " + (settings.autostart ? "oui" : "non") + " · Écran allumé : " + (settings.keepAwake ? "oui" : "non") + " · Zoom : " + Math.round(settings.zoom * 100) + " %" + " · Page au démarrage : " + settings.startPage,
     "Mises à jour : " + (upd.phase || "?") + (upd.version ? " " + upd.version : "") + (upd.message ? " — " + upd.message : ""),
     "Page : " + (win && !win.isDestroyed() ? win.webContents.getURL().split("?")[0] : "-"),
   ].join("\n");
@@ -158,6 +164,7 @@ async function buildMenu() {
     : upd.phase === "checking" ? "Recherche en cours…"
     : upd.phase === "current" ? "caisse.bzh est à jour"
     : upd.phase === "error" ? "Mise à jour indisponible — réessayer"
+    : upd.phase === "available" ? "Télécharger la version " + upd.version
     : "Rechercher des mises à jour";
   const template = [
     ...(process.platform === "darwin" ? [{ role: "appMenu" }] : []),
@@ -166,7 +173,7 @@ async function buildMenu() {
       submenu: [
         { label: "À propos de caisse.bzh", click: () => dialog.showMessageBox(win, { type: "info", title: "caisse.bzh", message: "caisse.bzh " + app.getVersion(), detail: "La caisse qui suit tout votre service.\nby Inklura — Fait en Bretagne\nhttps://caisse.bzh" }) },
         { type: "separator" },
-        { label: updLabel, enabled: upd.phase !== "disabled" && !["downloading", "checking", "ready", "installing"].includes(upd.phase), click: () => controller?.check() },
+        { label: updLabel, enabled: upd.phase !== "disabled" && !["downloading", "checking", "ready", "installing"].includes(upd.phase), click: () => (upd.phase === "available" ? shell.openExternal(APP_ORIGIN + "/telecharger") : controller?.check()) },
         {
           label: upd.phase === "ready" ? "Redémarrer et installer la version " + upd.version : "Aucune mise à jour prête",
           enabled: upd.phase === "ready",
@@ -231,6 +238,15 @@ async function buildMenu() {
             await update({ keepAwake: item.checked });
             applyKeepAwake();
           },
+        },
+        {
+          label: "Page au démarrage",
+          submenu: [["caisse", "Caisse"], ["cuisine", "Cuisine (écran de cuisine)"], ["tableau", "Tableau de bord"]].map(([id, label]) => ({
+            label,
+            type: "radio",
+            checked: settings.startPage === id,
+            click: async () => { await update({ startPage: id }); buildMenu(); },
+          })),
         },
         { type: "separator" },
         { role: "reload", label: "Recharger" },
@@ -339,7 +355,7 @@ function createWindow() {
     if (isMainFrame && code !== -3 && isInAppUrl(url)) showOffline();
   });
   win.webContents.on("did-navigate-in-page", (_e, url) => {
-    if (url.startsWith("file://") && url.includes("#retry-")) win.loadURL(START_URL).catch(() => showOffline());
+    if (url.startsWith("file://") && url.includes("#retry-")) win.loadURL(recoverUrl()).catch(() => showOffline());
   });
   // A crashed or frozen page must not leave a till on a blank screen: reload
   // (at most 3 times in 5 minutes, then the offline page with its retry button).
@@ -348,12 +364,28 @@ function createWindow() {
     if (details.reason === "clean-exit") return;
     const now = Date.now();
     crashes = crashes.filter((t) => now - t < 5 * 60 * 1000).concat(now);
-    if (crashes.length <= 3) win?.loadURL(START_URL).catch(() => showOffline());
+    if (crashes.length <= 3) win?.loadURL(recoverUrl()).catch(() => showOffline());
     else showOffline();
   });
-  win.on("unresponsive", () => log.warn("window unresponsive"));
+  // A page frozen for a minute is reloaded where it was: a stuck till is worse
+  // than a reload (the order in progress is kept by the page itself).
+  win.on("unresponsive", () => {
+    log.warn("window unresponsive");
+    clearTimeout(frozenTimer);
+    frozenTimer = setTimeout(() => {
+      if (!win || win.isDestroyed()) return;
+      log.error("window frozen for 60 s, reloading");
+      win.webContents.forcefullyCrashRenderer();
+    }, 60000);
+  });
+  win.on("responsive", () => clearTimeout(frozenTimer));
+  const remember = (url) => {
+    if (isAppPage(url) && new URL(url).pathname.startsWith("/app")) lastAppUrl = url;
+  };
+  win.webContents.on("did-navigate", (_e, url) => remember(url));
+  win.webContents.on("did-navigate-in-page", (_e, url, isMainFrame) => isMainFrame && remember(url));
   win.on("page-title-updated", (e) => e.preventDefault());
-  win.loadURL(START_URL).catch(() => showOffline());
+  win.loadURL(startUrl(settings.startPage)).catch(() => showOffline());
 }
 
 app.whenReady().then(async () => {
@@ -413,6 +445,7 @@ app.whenReady().then(async () => {
       autostart: settings.autostart,
       autostartSupported: autostartSupported(),
       keepAwake: settings.keepAwake,
+      startPage: settings.startPage,
       updatedFrom: updatedFrom || null,
     };
   });
@@ -441,12 +474,13 @@ app.whenReady().then(async () => {
     if (typeof p.autostart === "boolean" && autostartSupported()) next.autostart = p.autostart;
     if (typeof p.keepAwake === "boolean") next.keepAwake = p.keepAwake;
     if (typeof p.kiosk === "boolean") next.kiosk = p.kiosk;
+    if (["caisse", "cuisine", "tableau"].includes(p.startPage)) next.startPage = p.startPage;
     await update(next);
     if ("autostart" in next) applyAutostart();
     if ("keepAwake" in next) applyKeepAwake();
     if ("kiosk" in next) win?.setKiosk(next.kiosk);
     buildMenu();
-    return { ok: true, autostart: settings.autostart, keepAwake: settings.keepAwake, kiosk: settings.kiosk };
+    return { ok: true, autostart: settings.autostart, keepAwake: settings.keepAwake, kiosk: settings.kiosk, startPage: settings.startPage };
   });
   ipcMain.handle("updates:state", (event) => { trusted(event); return controller.snapshot(); });
   ipcMain.handle("updates:check", (event) => { trusted(event); return controller.check(); });
@@ -457,6 +491,27 @@ app.whenReady().then(async () => {
   createWindow();
   await buildMenu();
   controller.start();
+
+  // Unsigned macOS: no self-update, but say when a newer version is out.
+  if (app.isPackaged && !signedMac) {
+    let told = "";
+    const checkManual = async () => {
+      try {
+        const r = await net.fetch("https://api.github.com/repos/benfavre/caisse-bzh-desktop/releases/latest", { headers: { accept: "application/vnd.github+json" } });
+        if (!r.ok) return;
+        const tag = String((await r.json()).tag_name || "");
+        if (!isNewerVersion(tag, app.getVersion())) return;
+        const version = tag.replace(/^v/, "");
+        controller.setManual(version);
+        if (told !== version) notify("Nouvelle version de caisse.bzh", "La version " + version + " est disponible sur caisse.bzh/telecharger.");
+        told = version;
+      } catch (e) {
+        log.warn("manual update check", e);
+      }
+    };
+    setTimeout(checkManual, 15000).unref?.();
+    setInterval(checkManual, 4 * 60 * 60 * 1000).unref?.();
+  }
 
   // A till that is never closed still gets its updates: at night, once nobody
   // has touched the computer for 30 minutes, install silently and reopen.

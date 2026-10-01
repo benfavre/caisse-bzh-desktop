@@ -1,7 +1,7 @@
-# caisse.bzh 1.2.0
+# caisse.bzh 1.3.0
 
-- **Mises à jour sur un poste jamais éteint** : une version prête s'installe aussi la nuit (entre 3 h et 5 h, après 30 minutes sans utilisation), sans fenêtre d'installation, puis la caisse se rouvre. Toujours jamais pendant un service.
-- **Sortir du mode kiosque** : Ctrl+Maj+K (Cmd+Maj+K sur Mac) active ou quitte le kiosque, sans devoir fermer l'application.
-- Les boutons **Copier** de la caisse (liens, codes) et le plein écran de la page fonctionnent dans l'application.
-- Sécurité : une redirection serveur vers un autre site s'ouvre dans le navigateur au lieu de la fenêtre de la caisse.
-- Le ticket de test renvoie son résultat à la page ; une seconde ouverture de l'application ramène seulement la caisse au premier plan.
+- **Page au démarrage** (menu *Poste* ou bande « Poste » du tableau de bord) : Caisse, Cuisine ou Tableau de bord. Un écran de cuisine s'ouvre directement sur les bons.
+- Après un plantage, une coupure réseau ou un blocage, la caisse **revient sur la page où elle était** (un écran de cuisine reste sur Cuisine) au lieu de repartir de la caisse.
+- **Page bloquée** pendant une minute : elle se recharge d'elle-même au lieu de laisser le poste figé.
+- **macOS non signé** : l'application signale quand une nouvelle version est disponible (notification et menu *caisse.bzh* › « Télécharger la version… »).
+- Les réglages du poste (page au démarrage, kiosque, lancement au démarrage, écran allumé) sont aussi dans la bande « Poste » du tableau de bord, utile sur un écran tactile en mode kiosque.
