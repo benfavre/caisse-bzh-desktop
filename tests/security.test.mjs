@@ -23,3 +23,11 @@ test("menu shortcuts resolve to caisse.bzh pages", () => {
   assert.equal(shortcutUrl("cuisine"), "https://caisse.bzh/app/pos/kitchen");
   assert.equal(shortcutUrl("nope"), null);
 });
+test("web permissions: clipboard write and fullscreen for caisse.bzh only", async () => {
+  const { permissionAllowed } = await import("../electron/security.mjs");
+  assert.ok(permissionAllowed("clipboard-sanitized-write", "https://caisse.bzh"));
+  assert.ok(permissionAllowed("fullscreen", "https://www.caisse.bzh/app/pos"));
+  assert.equal(permissionAllowed("clipboard-sanitized-write", "https://auth.1clic.pro"), false);
+  assert.equal(permissionAllowed("clipboard-sanitized-write", "file:///x/offline.html"), false);
+  for (const p of ["media", "geolocation", "notifications", "clipboard-read", "openExternal"]) assert.equal(permissionAllowed(p, "https://caisse.bzh"), false, p);
+});

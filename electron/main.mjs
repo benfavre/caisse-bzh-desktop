@@ -5,15 +5,15 @@
 //    screen kept awake, remembered window and zoom, a persistent session, crash
 //    recovery, and self-updates that never interrupt a service (installed at
 //    quit or on explicit request).
-import { app, BrowserWindow, Menu, Notification, clipboard, dialog, ipcMain, net, powerSaveBlocker, screen, session, shell } from "electron";
+import { app, BrowserWindow, Menu, Notification, clipboard, dialog, ipcMain, net, powerMonitor, powerSaveBlocker, screen, session, shell } from "electron";
 import path from "node:path";
 import os from "node:os";
 import { existsSync } from "node:fs";
 import { readFile, writeFile, unlink, mkdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import electronUpdater from "electron-updater";
-import { START_URL, APP_ORIGIN, isInAppUrl, isAppPage, externalUrl, shortcutUrl } from "./security.mjs";
-import { UpdateController } from "./updater.mjs";
+import { START_URL, APP_ORIGIN, isInAppUrl, isAppPage, externalUrl, shortcutUrl, permissionAllowed } from "./security.mjs";
+import { UpdateController, nightlyInstallDue } from "./updater.mjs";
 import { loadSettings, saveSettings, printOptions, visibleBounds, autostartDesktopEntry, DEFAULT_SETTINGS } from "./printing.mjs";
 import { createLogger } from "./log.mjs";
 
@@ -28,7 +28,10 @@ let boundsTimer = null;
 let crashes = [];
 let log = { info() {}, warn() {}, error() {}, debug() {}, file: "" };
 
-if (!app.requestSingleInstanceLock()) app.quit();
+// A second launch only brings the running till to the front; it must not go on
+// to open its own window, updater or log.
+const primary = app.requestSingleInstanceLock();
+if (!primary) app.quit();
 app.on("second-instance", () => {
   if (win) {
     if (win.isMinimized()) win.restore();
@@ -58,9 +61,12 @@ function showOffline() {
   clearInterval(retryTimer);
   // Come back on our own as soon as caisse.bzh answers again.
   retryTimer = setInterval(() => {
+    if (!win || win.isDestroyed()) return clearInterval(retryTimer);
     if (!net.isOnline()) return;
     const req = net.request({ method: "HEAD", url: APP_ORIGIN + "/" });
     req.on("response", (res) => {
+      res.on("data", () => {});
+      res.on("error", () => {});
       if (res.statusCode < 500) {
         clearInterval(retryTimer);
         win?.loadURL(START_URL).catch(() => {});
@@ -117,6 +123,10 @@ async function printTestTicket() {
       log.warn("test print failed", r.reason);
       dialog.showMessageBox(win, { type: "warning", message: "Le ticket de test n'a pas pu être imprimé.", detail: String(r.reason) + "\n\nVérifiez que l'imprimante est allumée, reliée et qu'il reste du papier." });
     } else if (r.ok && opts.silent) notify("caisse.bzh", "Ticket de test envoyé à " + settings.printer);
+    return { ok: !!r.ok, silent: !!opts.silent, error: r.ok ? null : String(r.reason || "") };
+  } catch (e) {
+    log.warn("test print", e);
+    return { ok: false, silent: false, error: String(e?.message || e) };
   } finally {
     if (!w.isDestroyed()) w.destroy();
   }
@@ -161,7 +171,7 @@ async function buildMenu() {
           label: upd.phase === "ready" ? "Redémarrer et installer la version " + upd.version : "Aucune mise à jour prête",
           enabled: upd.phase === "ready",
           click: async () => {
-            const r = await dialog.showMessageBox(win, { type: "question", buttons: ["Redémarrer maintenant", "Plus tard"], defaultId: 1, cancelId: 1, message: "Installer la mise à jour maintenant ?", detail: "Assurez-vous qu'aucun encaissement n'est en cours. Sinon, elle s'installera automatiquement à la fermeture de l'application." });
+            const r = await dialog.showMessageBox(win, { type: "question", buttons: ["Redémarrer maintenant", "Plus tard"], defaultId: 1, cancelId: 1, message: "Installer la mise à jour maintenant ?", detail: "Assurez-vous qu'aucun encaissement n'est en cours. Sinon, elle s'installera automatiquement à la fermeture de l'application, ou cette nuit si le poste reste allumé." });
             if (r.response === 0) controller?.install();
           },
         },
@@ -196,13 +206,12 @@ async function buildMenu() {
       label: "Poste",
       submenu: [
         {
-          label: "Mode kiosque au démarrage",
+          // In kiosk mode the menu bar is hidden: this shortcut is the way out.
+          label: "Mode kiosque (retenu au démarrage)",
           type: "checkbox",
           checked: settings.kiosk,
-          click: async (item) => {
-            await update({ kiosk: item.checked });
-            win?.setKiosk(item.checked);
-          },
+          accelerator: "CmdOrCtrl+Shift+K",
+          click: (item) => setKiosk(item.checked),
         },
         {
           label: "Lancer au démarrage de l'ordinateur",
@@ -245,6 +254,12 @@ async function buildMenu() {
     },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+async function setKiosk(on) {
+  await update({ kiosk: on });
+  win?.setKiosk(on);
+  buildMenu();
 }
 
 async function setZoom(z) {
@@ -303,6 +318,14 @@ function createWindow() {
       if (ext) shell.openExternal(ext);
     }
   });
+  // will-navigate does not see server redirects (3xx): guard them too.
+  win.webContents.on("will-redirect", (event) => {
+    if (!event.isMainFrame || isInAppUrl(event.url)) return;
+    event.preventDefault();
+    log.warn("redirect blocked", event.url.split("?")[0]);
+    const ext = externalUrl(event.url);
+    if (ext) shell.openExternal(ext);
+  });
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (isInAppUrl(url)) win.loadURL(url);
     else {
@@ -334,6 +357,7 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  if (!primary) return;
   settingsFile = path.join(app.getPath("userData"), "settings.json");
   log = createLogger(path.join(app.getPath("userData"), "logs"));
   settings = await loadSettings(settingsFile);
@@ -347,9 +371,11 @@ app.whenReady().then(async () => {
     notify("caisse.bzh est à jour", "Version " + app.getVersion() + " installée (précédente : " + updatedFrom + ").");
   }
 
-  // The till needs no camera, microphone, geolocation or notifications.
-  session.defaultSession.setPermissionRequestHandler((_c, _p, cb) => cb(false));
-  session.defaultSession.setPermissionCheckHandler(() => false);
+  // The till needs no camera, microphone, geolocation or notifications; only
+  // clipboard writes (« Copier » buttons) and fullscreen, for caisse.bzh pages.
+  session.defaultSession.setPermissionRequestHandler((contents, permission, cb, details) =>
+    cb(permissionAllowed(permission, details?.requestingUrl || contents?.getURL?.() || "")));
+  session.defaultSession.setPermissionCheckHandler((_c, permission, origin) => permissionAllowed(permission, origin));
 
   const { autoUpdater } = electronUpdater;
   autoUpdater.logger = log;
@@ -372,7 +398,7 @@ app.whenReady().then(async () => {
   controller.on("state", (state) => {
     if (win && !win.isDestroyed()) win.webContents.send("updates:state", state);
     if (state.phase !== lastPhase) log.info("update", state.phase, state.version || "", state.message || "");
-    if (state.phase === "ready" && lastPhase !== "ready") notify("Mise à jour prête", "caisse.bzh " + state.version + " s'installera à la fermeture de l'application.");
+    if (state.phase === "ready" && lastPhase !== "ready") notify("Mise à jour prête", "caisse.bzh " + state.version + " s'installera à la fermeture de l'application, ou cette nuit si le poste reste allumé.");
     lastPhase = state.phase;
     buildMenu();
   });
@@ -407,7 +433,7 @@ app.whenReady().then(async () => {
       event.sender.print(opts, (success, failureReason) => resolve({ ok: !!success, silent: !!opts.silent, error: success ? null : String(failureReason || "") }));
     });
   });
-  ipcMain.handle("print:test", async (event) => { trusted(event); await printTestTicket(); return { ok: true }; });
+  ipcMain.handle("print:test", async (event) => { trusted(event); return await printTestTicket(); });
   ipcMain.handle("desktop:set", async (event, patch) => {
     trusted(event);
     const p = patch && typeof patch === "object" ? patch : {};
@@ -431,6 +457,15 @@ app.whenReady().then(async () => {
   createWindow();
   await buildMenu();
   controller.start();
+
+  // A till that is never closed still gets its updates: at night, once nobody
+  // has touched the computer for 30 minutes, install silently and reopen.
+  setInterval(() => {
+    if (controller.snapshot().phase !== "ready") return;
+    if (!nightlyInstallDue(new Date(), powerMonitor.getSystemIdleTime())) return;
+    log.info("night install", controller.snapshot().version);
+    controller.install({ silent: true });
+  }, 10 * 60 * 1000).unref?.();
 });
 
 process.on("uncaughtException", (e) => log.error("uncaught", e));

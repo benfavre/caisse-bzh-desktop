@@ -84,3 +84,21 @@ test("checksum/download errors are visible and listeners are cleaned up", () => 
   s.controller.dispose();
   assert.equal(s.updater.listenerCount("error"), 0);
 });
+test("night install: silent, only between 3:00 and 5:00 after 30 idle minutes", async () => {
+  const { nightlyInstallDue } = await import("../electron/updater.mjs");
+  const at = (h, m = 0) => new Date(2026, 9, 1, h, m);
+  assert.ok(nightlyInstallDue(at(3, 10), 1800));
+  assert.ok(nightlyInstallDue(at(4, 59), 7200));
+  assert.equal(nightlyInstallDue(at(3, 10), 600), false, "someone used the till recently");
+  assert.equal(nightlyInstallDue(at(2, 59), 7200), false);
+  assert.equal(nightlyInstallDue(at(5, 0), 7200), false);
+  assert.equal(nightlyInstallDue(at(14, 0), 7200), false, "never during the day");
+  const updater = new EventEmitter();
+  let args = null;
+  updater.quitAndInstall = (...a) => { args = a; };
+  const c = new UpdateController(updater);
+  updater.emit("update-downloaded", { version: "1.2.0" });
+  assert.equal(c.install({ silent: true }).ok, true);
+  assert.deepEqual(args, [true, true], "no installer window, app reopens");
+  c.dispose();
+});

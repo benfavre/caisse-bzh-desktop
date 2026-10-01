@@ -1,7 +1,9 @@
 // updater.mjs — electron-updater state machine (from benfavre/caviard, adapted for a till).
 // POS rule: an update NEVER restarts the app by itself. It downloads in the
 // background and installs when the app is closed (end of service) or when the
-// user explicitly chooses « Redémarrer et installer ».
+// user explicitly chooses « Redémarrer et installer ». A till left on day and
+// night would never quit, so a ready update also installs at night once the
+// computer has been idle for a while (see nightlyInstallDue).
 import { EventEmitter } from "node:events";
 export class UpdateController extends EventEmitter {
   constructor(
@@ -102,7 +104,9 @@ export class UpdateController extends EventEmitter {
     })();
     return this.pending;
   }
-  install() {
+  // silent: true for the unattended night install (no installer window on a
+  // kiosk till); the explicit « Redémarrer et installer » keeps the visible one.
+  install({ silent = false } = {}) {
     if (this.state.phase !== "ready") return { ok: false, reason: "not-ready" };
     if (!this.canInstall())
       return {
@@ -112,7 +116,7 @@ export class UpdateController extends EventEmitter {
       };
     this.set({ phase: "installing" });
     this.onInstall();
-    this.updater.quitAndInstall(false, true);
+    this.updater.quitAndInstall(silent, true);
     return { ok: true };
   }
   start() {
@@ -129,4 +133,14 @@ export class UpdateController extends EventEmitter {
       this.updater.off(event, handler);
     this.removeAllListeners();
   }
+}
+
+// Unattended install window: between 3:00 and 5:00 (local time) and no keyboard,
+// mouse or touch input on the computer for 30 minutes — nobody is serving.
+export const NIGHT_START = 3;
+export const NIGHT_END = 5;
+export const NIGHT_IDLE_SECONDS = 30 * 60;
+export function nightlyInstallDue(date, idleSeconds) {
+  const h = date.getHours();
+  return h >= NIGHT_START && h < NIGHT_END && Number(idleSeconds) >= NIGHT_IDLE_SECONDS;
 }

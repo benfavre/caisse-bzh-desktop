@@ -34,6 +34,14 @@ export function externalUrl(value) {
   return ["https:", "mailto:", "tel:"].includes(u.protocol) ? u.href : null;
 }
 
+// Web permissions granted to caisse.bzh pages: copying a link or a code (the
+// « Copier » buttons) and the page's own fullscreen button. Everything else
+// (camera, microphone, location, notifications…) stays refused.
+const ALLOWED_PERMISSIONS = new Set(["clipboard-sanitized-write", "fullscreen"]);
+export function permissionAllowed(permission, origin) {
+  return ALLOWED_PERMISSIONS.has(permission) && isAppPage(origin);
+}
+
 // Shortcuts of the app menu → in-app paths.
 export const SHORTCUTS = {
   caisse: "/app/pos",
