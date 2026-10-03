@@ -1,3 +1,4 @@
+import { readCheckpoint, writeCheckpoint } from "./recovery-checkpoint.mjs";
 import { receiptHtml } from "./receipt.mjs";
 import { preserveOfflineSale, readOfflineSales } from "./offline-journal.mjs";
 // main.mjs — caisse.bzh desktop: a secure shell around https://caisse.bzh.
@@ -515,6 +516,16 @@ app.whenReady().then(async () => {
     trusted(event);
     if (event.senderFrame !== event.sender.mainFrame) throw new Error("Main frame required");
     return preserveOfflineSale(path.join(app.getPath("userData"), "offline-journal"), record);
+  });
+  ipcMain.handle("recovery:checkpointRead", async (event, input) => {
+    trusted(event);
+    if (event.senderFrame !== event.sender.mainFrame) throw new Error("Main frame required");
+    return readCheckpoint(path.join(app.getPath("userData"), "offline-checkpoints"), input);
+  });
+  ipcMain.handle("recovery:checkpointWrite", async (event, input) => {
+    trusted(event);
+    if (event.senderFrame !== event.sender.mainFrame) throw new Error("Main frame required");
+    return writeCheckpoint(path.join(app.getPath("userData"), "offline-checkpoints"), input);
   });
   ipcMain.handle("recovery:state", (event, value) => {
     trusted(event);

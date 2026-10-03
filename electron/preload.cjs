@@ -4,6 +4,8 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("caisseDesktop", {
   info: () => ipcRenderer.invoke("desktop:info"),
+  checkpointRead: (input) => ipcRenderer.invoke("recovery:checkpointRead", { scope: input?.scope }),
+  checkpointWrite: (input) => ipcRenderer.invoke("recovery:checkpointWrite", input),
   journalRead: (input) => ipcRenderer.invoke("recovery:read", { scope: input?.scope, cursor: input?.cursor }),
   journalAppend: (record) => ipcRenderer.invoke("recovery:append", record),
   recoveryState: (state) => ipcRenderer.invoke("recovery:state", {

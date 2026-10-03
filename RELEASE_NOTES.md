@@ -1,7 +1,7 @@
 # caisse.bzh 1.4.0
 
 - Les mises à jour attendent un état récent sans commande ouverte, service en cours, paiement incertain ou travail à synchroniser.
-- Chaque vente encaissée hors ligne conserve une copie locale indépendante du stockage du navigateur, récupérable par la caisse après perte de ce stockage.
+- Les ventes hors ligne et les commandes enregistrées en attente conservent une copie locale indépendante du stockage du navigateur. Après perte de ce stockage, les demandes retrouvent leur identité initiale pour éviter de les envoyer comme de nouvelles opérations.
 - L’impression utilise le document de caisse et mémorise la soumission avant de contacter le système. Un résultat inconnu ne provoque pas de renvoi automatique.
 - Le minimum macOS est corrigé à macOS 13, conformément à la version Electron embarquée.
 
