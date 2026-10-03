@@ -16,6 +16,7 @@
   },
   "main": "electron/main.mjs",
   "scripts": {
+    "postinstall": "node scripts/fix-macos-keychain.cjs",
     "start": "electron .",
     "test": "node --test tests/*.test.mjs",
     "pack": "electron-builder --config electron-builder.config.cjs --dir --publish never",

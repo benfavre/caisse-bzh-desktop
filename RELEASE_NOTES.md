@@ -6,3 +6,5 @@
 - Le minimum macOS est corrigé à macOS 13, conformément à la version Electron embarquée.
 
 Le fonctionnement hors ligne nécessite une première connexion et la préparation du poste. Deux appareils déconnectés ne peuvent pas recevoir mutuellement leurs commandes. La soumission au système d’impression ne confirme pas la sortie papier.
+
+Les signatures Mac et la validation Apple introduites en 1.3.3 sont conservées. Pour remplacer une ancienne version non signée, installez une fois la nouvelle application depuis caisse.bzh/telecharger.

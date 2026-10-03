@@ -5,6 +5,12 @@
 for (const name of ["CSC_LINK", "WIN_CSC_LINK"]) {
   if (!process.env[name]?.trim()) delete process.env[name];
 }
+const requireMacSigning = process.env.REQUIRE_MAC_SIGNING === "true";
+if (requireMacSigning) {
+  for (const name of ["CSC_LINK", "CSC_KEY_PASSWORD", "APPLE_ID", "APPLE_APP_SPECIFIC_PASSWORD", "APPLE_TEAM_ID"]) {
+    if (!process.env[name]?.trim()) throw new Error(`Missing macOS release credential: ${name}`);
+  }
+}
 
 module.exports = {
   appId: "bzh.caisse.desktop",
@@ -29,6 +35,7 @@ module.exports = {
   },
   mac: {
     minimumSystemVersion: "13.0",
+    forceCodeSigning: requireMacSigning || !!process.env.CSC_LINK,
     target: ["dmg", "zip"],
     category: "public.app-category.business",
     icon: "build/icon.png",

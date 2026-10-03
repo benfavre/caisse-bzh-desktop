@@ -21,7 +21,7 @@ jobs:
             platform: macos
             flags: --mac --x64 --arm64
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -35,11 +35,35 @@ jobs:
         env:
           CSC_LINK: ${{ runner.os == 'macOS' && secrets.CSC_LINK || '' }}
           CSC_KEY_PASSWORD: ${{ runner.os == 'macOS' && secrets.CSC_KEY_PASSWORD || '' }}
-          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          WIN_CSC_LINK: ${{ runner.os == 'Windows' && secrets.WIN_CSC_LINK || '' }}
+          WIN_CSC_KEY_PASSWORD: ${{ runner.os == 'Windows' && secrets.WIN_CSC_KEY_PASSWORD || '' }}
+          APPLE_ID: ${{ runner.os == 'macOS' && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ runner.os == 'macOS' && secrets.APPLE_TEAM_ID || '' }}
+          REQUIRE_MAC_SIGNING: ${{ runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/v') && 'true' || 'false' }}
+      - name: Verify macOS signature, notarization ticket and Gatekeeper
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [[ -z "$CSC_LINK" ]]; then
+            echo "Development build uses ad-hoc signing."
+            exit 0
+          fi
+          shopt -s nullglob
+          apps=(release/mac*/*.app)
+          [[ ${#apps[@]} -eq 2 ]]
+          for app in "${apps[@]}"; do
+            codesign --verify --deep --strict --verbose=2 "$app"
+            signature="$(codesign --display --verbose=4 "$app" 2>&1)"
+            [[ "$signature" == *"Authority=Developer ID Application:"* ]]
+            [[ "$signature" == *"TeamIdentifier=$APPLE_TEAM_ID"* ]]
+            xcrun stapler validate "$app"
+            spctl --assess --type execute --verbose=2 "$app"
+            plutil -extract LSMinimumSystemVersion raw -o - "$app/Contents/Info.plist"
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-${{ matrix.platform }}
