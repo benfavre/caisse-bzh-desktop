@@ -60,6 +60,7 @@ jobs:
           path: |
             release/store/*.appx
             release/store/AppxManifest.xml
+            release/store/executable-manifest.xml
             release/store/package-validation.json
             release/store/wack-report.xml
           if-no-files-found: error

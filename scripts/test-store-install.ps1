@@ -51,7 +51,14 @@ try {
       throw 'Windows App Certification Kit exceeded eight minutes.'
     }
     if (-not (Test-Path $wackPath)) { throw 'Windows App Certification Kit produced no report.' }
-    $report.certification = "Windows App Certification Kit completed (exit $($wack.ExitCode)); inspect wack-report.xml. Microsoft Store certification is still pending."
+    [xml]$wackReport = Get-Content $wackPath -Raw
+    $results = @($wackReport.SelectNodes('//TEST') | ForEach-Object {
+      [ordered]@{ name = $_.GetAttribute('NAME'); optional = $_.GetAttribute('OPTIONAL'); result = $_.SelectSingleNode('RESULT').InnerText }
+    })
+    $overall = $wackReport.DocumentElement.GetAttribute('OVERALL_RESULT')
+    $report | Add-Member -NotePropertyName wack -NotePropertyValue ([ordered]@{ overall = $overall; tests = $results })
+    $report.certification = "Windows App Certification Kit: $overall (exit $($wack.ExitCode)). Inspect warnings and optional failures; Microsoft Store certification is still pending."
+    if (@($results | Where-Object { $_.optional -eq 'FALSE' -and $_.result -eq 'FAIL' }).Count -gt 0) { throw 'A required Windows App Certification Kit test failed.' }
   } else {
     $report.certification = 'Windows App Certification Kit not run: not requested or kit/interactive session unavailable; Microsoft Store certification pending'
   }

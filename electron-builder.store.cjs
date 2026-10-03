@@ -27,6 +27,7 @@ module.exports = {
   extraMetadata: { ...base.extraMetadata, windowsStoreBuild: true, macAutoUpdates: false },
   publish: null,
   forceCodeSigning: false,
+  afterPack: require("./scripts/set-store-dpi.cjs"),
   artifactName: `caisse-bzh-\${version}-windows-store${preparation ? "-preparation" : ""}-\${arch}.\${ext}`,
   win: { ...base.win, target: [{ target: "appx", arch: ["x64"] }] },
   appx: {

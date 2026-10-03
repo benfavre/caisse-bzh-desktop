@@ -9,6 +9,7 @@ $expectedName = if ($preparation) { 'Webdesign29.CaisseBZH.Preparation' } else {
 $expectedPublisher = if ($preparation) { 'CN=Webdesign29-Preparation' } else { $env:STORE_PUBLISHER.Trim() }
 $metadata = Get-Content package.json -Raw | ConvertFrom-Json
 $payload = Join-Path $env:RUNNER_TEMP 'store-payload.asar'
+$nativeExecutable = Join-Path $env:RUNNER_TEMP 'store-executable.exe'
 try {
   $entry = $archive.GetEntry('AppxManifest.xml')
   if (-not $entry) { throw 'Missing AppxManifest.xml.' }
@@ -25,6 +26,15 @@ try {
   if ($application.Id -ne 'CaisseBZH' -or $application.EntryPoint -ne 'Windows.FullTrustApplication') { throw 'Incorrect desktop entry point.' }
   $executable = $application.Executable.Replace('\', '/')
   if (-not $archive.GetEntry($executable)) { throw "Manifest executable is absent: $executable" }
+  [IO.Compression.ZipFileExtensions]::ExtractToFile($archive.GetEntry($executable), $nativeExecutable, $true)
+  $sdk = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10/bin'
+  $manifestTool = Get-ChildItem "$sdk/*/x64/mt.exe" | Sort-Object FullName -Descending | Select-Object -First 1
+  if (-not $manifestTool) { throw 'Windows SDK mt.exe is required to verify the executable manifest.' }
+  & $manifestTool.FullName -nologo "-inputresource:$nativeExecutable;#1" '-out:release/store/executable-manifest.xml'
+  if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect the executable manifest.' }
+  [xml]$executableManifest = Get-Content release/store/executable-manifest.xml -Raw
+  $dpi = $executableManifest.SelectSingleNode("//*[local-name()='dpiAwareness']")
+  if (-not $dpi -or $dpi.InnerText -ne 'PerMonitorV2, PerMonitor') { throw 'Modern per-monitor DPI declaration missing.' }
   $capabilities = @($manifest.Package.Capabilities.ChildNodes | Where-Object NodeType -eq Element)
   if ($capabilities.Count -ne 1 -or $capabilities[0].GetAttribute('Name') -ne 'runFullTrust') { throw 'Unexpected package capabilities.' }
   if ($manifestText -match 'windows.startupTask') { throw 'Unsupported startup task declared.' }
@@ -44,6 +54,7 @@ try {
 } finally {
   $archive.Dispose()
   Remove-Item $payload -ErrorAction SilentlyContinue
+  Remove-Item $nativeExecutable -ErrorAction SilentlyContinue
 }
 $report = [ordered]@{
   package = $package.Name
