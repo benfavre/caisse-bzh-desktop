@@ -1,4 +1,5 @@
-# caisse.bzh 1.3.1
+# caisse.bzh 1.3.2
 
-- **Nouveautés** : menu *Aide* › « Nouveautés de l'application » ouvre la liste des versions sur caisse.bzh.
-- Après une mise à jour, un clic sur la notification « caisse.bzh est à jour » montre ce qui a changé.
+- **macOS** : l'application pour Mac Intel et Apple Silicon est signée par Benjamin Favre et validée par Apple.
+- Les prochaines mises à jour sur Mac se téléchargent automatiquement et s'installent à la fermeture de l'application, après le service.
+- Pour passer d'une ancienne version Mac à cette version signée, téléchargez et installez la nouvelle application depuis caisse.bzh/telecharger.

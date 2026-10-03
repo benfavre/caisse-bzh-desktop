@@ -38,4 +38,6 @@ Ne jamais publier un manifeste sans tous les fichiers qu'il référence. Aucun j
 
 Les premières versions ne sont pas signées : Windows affiche SmartScreen au premier lancement, macOS a une signature ad hoc. **Les versions macOS non signées ne se mettent pas à jour seules** : elles signalent une nouvelle version et renvoient vers caisse.bzh/telecharger. Pour signer : secrets Actions `CSC_LINK` / `CSC_KEY_PASSWORD` (Developer ID), `APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` / `APPLE_TEAM_ID` pour la notarisation, `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD` pour Windows.
 
+À partir de 1.3.2, les publications par tag exigent les cinq identifiants macOS. Le workflow vérifie la signature Developer ID, l'équipe Apple, le ticket de notarisation et Gatekeeper avant de publier. `CSC_LINK` contient le PKCS12 encodé en base64 dans un secret Actions, jamais dans un fichier suivi par Git.
+
 Sous Linux, gardez l'AppImage dans un dossier accessible en écriture pour les mises à jour.
