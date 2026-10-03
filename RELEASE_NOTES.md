@@ -1,4 +1,4 @@
-# caisse.bzh 1.3.2
+# caisse.bzh 1.3.3
 
 - **macOS** : l'application pour Mac Intel et Apple Silicon est signée par Benjamin Favre et validée par Apple.
 - Les prochaines mises à jour sur Mac se téléchargent automatiquement et s'installent à la fermeture de l'application, après le service.
