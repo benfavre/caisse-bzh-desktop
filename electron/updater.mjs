@@ -28,7 +28,7 @@ export class UpdateController extends EventEmitter {
     };
     updater.autoDownload = true;
     // Installed at the next normal quit (end of service) — never mid-service.
-    updater.autoInstallOnAppQuit = true;
+    updater.autoInstallOnAppQuit = false;
     updater.allowDowngrade = false;
     updater.allowPrerelease = false;
     const listen = (event, handler) => {
@@ -112,7 +112,7 @@ export class UpdateController extends EventEmitter {
       return {
         ok: false,
         reason: "unsaved",
-        message: "Terminez l'encaissement en cours avant de redémarrer.",
+        message: "Ouvrez la caisse, terminez le service et vérifiez les commandes en attente avant de redémarrer.",
       };
     this.set({ phase: "installing" });
     this.onInstall();

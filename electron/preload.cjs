@@ -4,8 +4,17 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("caisseDesktop", {
   info: () => ipcRenderer.invoke("desktop:info"),
+  journalRead: (input) => ipcRenderer.invoke("recovery:read", { scope: input?.scope, cursor: input?.cursor }),
+  journalAppend: (record) => ipcRenderer.invoke("recovery:append", record),
+  recoveryState: (state) => ipcRenderer.invoke("recovery:state", {
+    pending: state?.pending, openTickets: state?.openTickets, uncertain: state?.uncertain,
+    storageError: state?.storageError, busy: state?.busy, shiftOpen: state?.shiftOpen,
+  }),
   // Print the current page (the till's receipt / Z sheet uses print CSS).
-  print: () => ipcRenderer.invoke("print:page"),
+  print: (document) => ipcRenderer.invoke("print:page", document ? {
+    version: document.version, id: document.id, shopId: document.shopId, training: document.training,
+    copyNumber: document.copyNumber, source: document.source, kind: document.kind, blocks: document.blocks,
+  } : null),
   printers: () => ipcRenderer.invoke("print:printers"),
   setPrinter: (name) => ipcRenderer.invoke("print:set-printer", String(name || "")),
   printTest: () => ipcRenderer.invoke("print:test"),

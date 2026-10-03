@@ -1,3 +1,5 @@
+import { receiptHtml } from "./receipt.mjs";
+import { preserveOfflineSale, readOfflineSales } from "./offline-journal.mjs";
 // main.mjs — caisse.bzh desktop: a secure shell around https://caisse.bzh.
 //  • the web app keeps its own logic, offline shell and updates (server-side);
 //  • the shell adds what a till needs: silent receipt printing on a chosen
@@ -16,6 +18,8 @@ import { APP_ORIGIN, isInAppUrl, isAppPage, externalUrl, shortcutUrl, permission
 import { UpdateController, nightlyInstallDue, isNewerVersion } from "./updater.mjs";
 import { loadSettings, saveSettings, printOptions, visibleBounds, autostartDesktopEntry, DEFAULT_SETTINGS } from "./printing.mjs";
 import { createLogger } from "./log.mjs";
+import { recoveryReport, updateSafe } from "./recovery.mjs";
+import { submitPrint } from "./print-jobs.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 let win = null;
@@ -28,6 +32,7 @@ let boundsTimer = null;
 let crashes = [];
 let lastAppUrl = "";
 let frozenTimer = null;
+let recovery = null;
 let log = { info() {}, warn() {}, error() {}, debug() {}, file: "" };
 
 // A second launch only brings the running till to the front; it must not go on
@@ -187,8 +192,8 @@ async function buildMenu() {
           label: upd.phase === "ready" ? "Redémarrer et installer la version " + upd.version : "Aucune mise à jour prête",
           enabled: upd.phase === "ready",
           click: async () => {
-            const r = await dialog.showMessageBox(win, { type: "question", buttons: ["Redémarrer maintenant", "Plus tard"], defaultId: 1, cancelId: 1, message: "Installer la mise à jour maintenant ?", detail: "Assurez-vous qu'aucun encaissement n'est en cours. Sinon, elle s'installera automatiquement à la fermeture de l'application, ou cette nuit si le poste reste allumé." });
-            if (r.response === 0) controller?.install();
+            const r = await dialog.showMessageBox(win, { type: "question", buttons: ["Redémarrer maintenant", "Plus tard"], defaultId: 1, cancelId: 1, message: "Installer la mise à jour maintenant ?", detail: "Terminez le service et synchronisez les commandes. L’installation attendra que la caisse confirme qu’aucun travail n’est en cours." });
+            if (r.response === 0) { const result = controller?.install(); if (result && !result.ok) await dialog.showMessageBox(win, { type: "info", message: "Mise à jour différée", detail: result.message || "La mise à jour n’est pas prête." }); }
           },
         },
         ...(upd.phase === "disabled" && upd.message ? [{ label: upd.message, enabled: false }] : []),
@@ -428,6 +433,7 @@ app.whenReady().then(async () => {
   const enabled = app.isPackaged && configured && supported;
   controller = new UpdateController(autoUpdater, {
     enabled,
+    canInstall: () => updateSafe(recovery),
     reason: !app.isPackaged
       ? "Les mises à jour sont disponibles dans la version installée."
       : !signedMac
@@ -440,7 +446,7 @@ app.whenReady().then(async () => {
   controller.on("state", (state) => {
     if (win && !win.isDestroyed()) win.webContents.send("updates:state", state);
     if (state.phase !== lastPhase) log.info("update", state.phase, state.version || "", state.message || "");
-    if (state.phase === "ready" && lastPhase !== "ready") notify("Mise à jour prête", "caisse.bzh " + state.version + " s'installera à la fermeture de l'application, ou cette nuit si le poste reste allumé.");
+    if (state.phase === "ready" && lastPhase !== "ready") notify("Mise à jour prête", "caisse.bzh " + state.version + " pourra être installée après la clôture du service et la synchronisation des commandes.");
     lastPhase = state.phase;
     buildMenu();
   });
@@ -469,11 +475,16 @@ app.whenReady().then(async () => {
     buildMenu();
     return { ok: true, printer: settings.printer || null };
   });
-  ipcMain.handle("print:page", async (event) => {
+  ipcMain.handle("print:page", async (event, document) => {
     trusted(event);
     const opts = printOptions(settings, await printersList());
-    return await new Promise((resolve) => {
-      event.sender.print(opts, (success, failureReason) => resolve({ ok: !!success, silent: !!opts.silent, error: success ? null : String(failureReason || "") }));
+    const html = receiptHtml(document);
+    return submitPrint(path.join(app.getPath("userData"), "print-jobs"), document, async () => {
+      const receipt = new BrowserWindow({ show: false, width: 340, height: 700, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, javascript: false } });
+      try {
+        await receipt.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(html));
+        return await new Promise((resolve) => receipt.webContents.print(opts, (success, failureReason) => resolve({ ok: !!success, silent: !!opts.silent, error: success ? null : String(failureReason || "") })));
+      } finally { if (!receipt.isDestroyed()) receipt.destroy(); }
     });
   });
   ipcMain.handle("print:test", async (event) => { trusted(event); return await printTestTicket(); });
@@ -495,6 +506,22 @@ app.whenReady().then(async () => {
   ipcMain.handle("updates:state", (event) => { trusted(event); return controller.snapshot(); });
   ipcMain.handle("updates:check", (event) => { trusted(event); return controller.check(); });
   ipcMain.handle("updates:install", (event) => { trusted(event); return controller.install(); });
+  ipcMain.handle("recovery:read", async (event, input) => {
+    trusted(event);
+    if (event.senderFrame !== event.sender.mainFrame) throw new Error("Main frame required");
+    return readOfflineSales(path.join(app.getPath("userData"), "offline-journal"), input);
+  });
+  ipcMain.handle("recovery:append", async (event, record) => {
+    trusted(event);
+    if (event.senderFrame !== event.sender.mainFrame) throw new Error("Main frame required");
+    return preserveOfflineSale(path.join(app.getPath("userData"), "offline-journal"), record);
+  });
+  ipcMain.handle("recovery:state", (event, value) => {
+    trusted(event);
+    if (event.senderFrame !== event.sender.mainFrame) throw new Error("Main frame required");
+    recovery = recoveryReport(value);
+    return { ok: !!recovery, updateSafe: updateSafe(recovery) };
+  });
 
   applyKeepAwake();
   applyAutostart();
@@ -528,6 +555,7 @@ app.whenReady().then(async () => {
   setInterval(() => {
     if (controller.snapshot().phase !== "ready") return;
     if (!nightlyInstallDue(new Date(), powerMonitor.getSystemIdleTime())) return;
+    if (!updateSafe(recovery)) return;
     log.info("night install", controller.snapshot().version);
     controller.install({ silent: true });
   }, 10 * 60 * 1000).unref?.();
@@ -535,6 +563,11 @@ app.whenReady().then(async () => {
 
 process.on("uncaughtException", (e) => log.error("uncaught", e));
 app.on("window-all-closed", () => app.quit());
+app.on("before-quit", () => {
+  // Ordinary app closure preserves pending work. Only a recently verified idle
+  // register may also install a downloaded update during that closure.
+  if (controller) controller.updater.autoInstallOnAppQuit = updateSafe(recovery);
+});
 app.on("web-contents-created", (_e, contents) => {
   contents.on("will-attach-webview", (event) => event.preventDefault());
 });

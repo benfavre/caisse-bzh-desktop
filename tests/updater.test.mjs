@@ -62,7 +62,7 @@ test("deduplicates simultaneous checks", async () => {
 test("download progress, busy guard and explicit restart", () => {
   let dirty = true;
   const s = setup({ canInstall: () => !dirty });
-  assert.equal(s.updater.autoInstallOnAppQuit, true, "installed at the next quit, never mid-service");
+  assert.equal(s.updater.autoInstallOnAppQuit, false, "quit installs require an explicit fresh recovery check");
   assert.equal(s.updater.allowDowngrade, false);
   assert.equal(s.controller.install().reason, "not-ready");
   s.updater.emit("update-available", { version: "1.1.0" });

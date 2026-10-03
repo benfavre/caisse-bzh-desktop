@@ -28,6 +28,7 @@ module.exports = {
     shortcutName: "caisse.bzh",
   },
   mac: {
+    minimumSystemVersion: "13.0",
     target: ["dmg", "zip"],
     category: "public.app-category.business",
     icon: "build/icon.png",
