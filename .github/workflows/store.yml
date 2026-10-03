@@ -13,6 +13,14 @@ on:
       publisher:
         description: 'Exact Package/Identity/Publisher (CN=...) from Partner Center, required for a final build'
         type: string
+      test_install:
+        description: 'Install a temporary signed copy on the isolated Windows runner (preparation only)'
+        type: boolean
+        default: false
+      run_wack:
+        description: 'Attempt Windows App Certification Kit if installed and the runner has an active desktop'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -26,6 +34,7 @@ jobs:
       STORE_IDENTITY_NAME: ${{ inputs.identity_name }}
       STORE_PUBLISHER: ${{ inputs.publisher }}
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      STORE_RUN_WACK: ${{ inputs.run_wack }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -37,14 +46,21 @@ jobs:
       - name: Build unsigned Store package (Microsoft signs certified submissions)
         run: npm run dist:store
       - name: Validate manifest and packaged runtime
+        id: validation
         shell: pwsh
         run: ./scripts/validate-store-package.ps1
+      - name: Test isolated installation and package activation
+        if: inputs.preparation && inputs.test_install
+        shell: powershell
+        run: ./scripts/test-store-install.ps1
       - uses: actions/upload-artifact@v4
+        if: always() && steps.validation.outcome == 'success'
         with:
           name: microsoft-store-x64${{ inputs.preparation && '-preparation' || '' }}
           path: |
             release/store/*.appx
             release/store/AppxManifest.xml
             release/store/package-validation.json
+            release/store/wack-report.xml
           if-no-files-found: error
           retention-days: 30

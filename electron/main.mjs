@@ -272,6 +272,7 @@ async function buildMenu() {
     {
       label: "Aide",
       submenu: [
+        ...(distribution.store ? [{ label: "Essayer la démo", click: () => win?.loadURL(APP_ORIGIN + "/demo") }] : []),
         { label: "Centre d'aide", click: go("aide") },
         { label: "Guide de l'application de bureau", click: () => shell.openExternal(APP_ORIGIN + "/docs/application-de-bureau") },
         { label: "Nouveautés de l'application", click: () => shell.openExternal(CHANGELOG_URL) },
@@ -417,7 +418,7 @@ app.whenReady().then(async () => {
   log = createLogger(path.join(app.getPath("userData"), "logs"));
   settings = await loadSettings(settingsFile);
   log.info("start", app.getVersion(), process.platform, process.arch, process.env.APPIMAGE ? "appimage" : "");
-  log.info("distribution", distribution.store ? "microsoft-store" : "direct", "self-updates", distribution.updates.enabled, "autostart", distribution.autostartSupported);
+  log.info("distribution", distribution.store ? "microsoft-store" : "direct", "self-updates", distribution.updates.enabled, "autostart", distribution.autostartSupported, "package-identity", process.windowsStore === true);
 
   // « Mis à jour » : first launch of a new version after an update.
   const updatedFrom = settings.lastVersion && settings.lastVersion !== app.getVersion() ? settings.lastVersion : "";
