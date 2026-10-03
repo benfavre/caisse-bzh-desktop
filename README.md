@@ -43,3 +43,17 @@ Les premières versions ne sont pas signées : Windows affiche SmartScreen au pr
 `npm ci` applique une correction ciblée à electron-builder 26.15.3 : le mot de passe du trousseau temporaire doit être utilisé pour `set-key-partition-list`, distinct du mot de passe PKCS12. Lors d'une mise à jour du packager, revoir `scripts/fix-macos-keychain.cjs`.
 
 Sous Linux, gardez l'AppImage dans un dossier accessible en écriture pour les mises à jour.
+
+## Microsoft Store
+
+Le workflow manuel **Microsoft Store package** construit un AppX x64 pour Windows 10 (version 2004 ou plus) et Windows 11. Microsoft accepte ce format et signe les paquets après certification : aucun certificat commercial n'est nécessaire pour cette distribution. Les installateurs NSIS du site restent une distribution distincte.
+
+Tant que le compte entreprise n'est pas validé, laisser **preparation** activé. Le paquet porte une identité provisoire, contient les icônes caisse.bzh et sert à valider la chaîne de construction ; il ne peut pas être soumis au Store. Les artefacts et le rapport de validation sont conservés 30 jours dans Actions et ne sont pas publiés dans les releases GitHub.
+
+Après validation du compte, réserver le nom de l'application dans Partner Center, ouvrir **Gestion du produit > Identité de l'application**, puis copier exactement **Package/Identity/Name** et **Package/Identity/Publisher**. Relancer le workflow avec **preparation** désactivé et les champs **identity_name** et **publisher** renseignés. Le quatrième numéro de version reste `0`, comme l'exige le Store. En local sur Windows : `npm run dist:store` avec `STORE_IDENTITY_NAME` et `STORE_PUBLISHER`, ou `STORE_PREPARATION=true` pour préparer la construction.
+
+L'édition Store utilise les mises à jour du Store ; elle ne contacte pas le flux de mises à jour NSIS et ne peut pas installer ces mises à jour. Le lancement automatique est désactivé dans cette première édition : l'API de registre utilisée par les installateurs classiques ne gère pas les tâches de démarrage des paquets Windows. Impression, mode kiosque et maintien de l'écran allumé restent disponibles.
+
+Le workflow vérifie le manifeste généré par MakeAppx, l'exécutable, les ressources et le contenu de l'application. Il faut encore tester le paquet installé sur Windows et exécuter le **Windows App Certification Kit** avant la soumission. La certification Microsoft et la publication nécessitent ensuite un compte approuvé, la fiche Store, les déclarations et les informations permettant aux testeurs d'accéder au service.
+
+Références : [exigences des paquets Microsoft Store](https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/msix/app-package-requirements), [détection des paquets Windows par Electron](https://www.electronjs.org/docs/latest/api/process#processwindowsstore-readonly).
