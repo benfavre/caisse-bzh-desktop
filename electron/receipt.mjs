@@ -1,7 +1,7 @@
 import { printIdentity } from './print-jobs.mjs';
 const escape = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 export function receiptHtml(document) {
-  if (!printIdentity(document) || !['sale', 'refund', 'z'].includes(document.kind) || !Array.isArray(document.blocks) || !document.blocks.length || document.blocks.length > 600) throw new Error('Invalid print document');
+  if (!printIdentity(document) || !['sale', 'refund', 'z', 'service'].includes(document.kind) || !Array.isArray(document.blocks) || !document.blocks.length || document.blocks.length > 600) throw new Error('Invalid print document');
   const blocks = document.blocks.map(block => {
     if (!block || typeof block.text !== 'string' || block.text.length > 500 || (block.right !== undefined && (typeof block.right !== 'string' || block.right.length > 500))) throw new Error('Invalid print block');
     const style = ['normal', 'title', 'small', 'rule'].includes(block.style) ? block.style : 'normal';

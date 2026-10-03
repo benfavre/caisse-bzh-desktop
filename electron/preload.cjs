@@ -3,6 +3,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("caisseDesktop", {
+  printDocumentKinds: Object.freeze(["sale", "refund", "z", "service"]),
   info: () => ipcRenderer.invoke("desktop:info"),
   checkpointRead: (input) => ipcRenderer.invoke("recovery:checkpointRead", { scope: input?.scope }),
   checkpointWrite: (input) => ipcRenderer.invoke("recovery:checkpointWrite", input),
