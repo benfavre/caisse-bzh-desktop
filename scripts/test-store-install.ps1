@@ -75,8 +75,8 @@ try {
     Remove-Item "Cert:/LocalMachine/TrustedPeople/$($certificate.Thumbprint)" -ErrorAction SilentlyContinue
   }
   Remove-Item $testPackage, $publicCertificate -ErrorAction SilentlyContinue
-  $report | ConvertTo-Json | Set-Content $reportPath -Encoding utf8
-  $report | ConvertTo-Json
+  $report | ConvertTo-Json -Depth 8 | Set-Content $reportPath -Encoding utf8
+  $report | ConvertTo-Json -Depth 8
   if ($env:GITHUB_STEP_SUMMARY) {
     "`nInstalled package: $($report.installedPackage).`n`nLaunch: $($report.installedLaunch).`n`n$($report.certification)." | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
   }
