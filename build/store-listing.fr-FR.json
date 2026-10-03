@@ -24,12 +24,11 @@
   "personalInformation": true,
   "thirdPartyBilling": "Stripe for the caisse.bzh service subscription; no Microsoft in-app purchase integration",
   "restrictedCapabilityJustification": "runFullTrust: Electron desktop application providing access to installed printers, local application settings and kiosk/window controls. It loads only caisse.bzh and the authorized sign-in service; it does not download or install an external application updater in the Store edition.",
-  "certificationNotes": "Launch the app. A sign-in page is shown for existing customer accounts. To test without customer credentials, select Aide > Essayer la démo in the native application menu. The shared demo is available at https://caisse.bzh/demo without registration or payment. If the staff identification panel appears, select Continuer sans identification to inspect the demo. Demo transactions are training data and are reset nightly. The Imprimante menu offers a native test ticket; kiosk mode can be exited using Ctrl+Shift+K. A network connection is required. The real service is subscription-based; do not make a payment during certification. Full transactional testing still needs a dedicated demo staff access method to be confirmed before submission.",
+  "certificationNotes": "Launch the app. A sign-in page is shown for existing customer accounts. To test without customer credentials, select Aide > Essayer la démo in the native application menu. The shared demo is available at https://caisse.bzh/demo without registration or payment. If the staff identification panel appears, select Continuer sans identification. Demo/training accounts do not require a staff PIN to access the till; use Ouvrir le service to start a demonstration service if needed. Demo transactions are training data and are reset nightly. The Imprimante menu offers a native test ticket; kiosk mode can be exited using Ctrl+Shift+K. A network connection is required. The real service is subscription-based; do not make a subscription payment during certification.",
   "pendingBeforeSubmission": [
     "Microsoft company-association review and account completion",
     "Reserve the app name and rebuild with the exact Partner Center identity and publisher",
     "Provide the required privacy policy URL or policy text; the sales terms contain only a short data-use section",
-    "Confirm full demo staff access for certification without exposing customer credentials",
     "Capture screenshots from the Windows app using demo data",
     "Review installed-package tests and Windows App Certification Kit report",
     "Complete age-rating and product declarations accurately in Partner Center"
