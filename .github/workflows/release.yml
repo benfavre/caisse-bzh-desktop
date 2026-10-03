@@ -52,13 +52,17 @@ jobs:
             echo "Development build uses ad-hoc signing."
             exit 0
           fi
-          for app in release/mac*/caisse.bzh.app; do
+          shopt -s nullglob
+          apps=(release/mac*/*.app)
+          [[ ${#apps[@]} -eq 2 ]]
+          for app in "${apps[@]}"; do
             codesign --verify --deep --strict --verbose=2 "$app"
             signature="$(codesign --display --verbose=4 "$app" 2>&1)"
             [[ "$signature" == *"Authority=Developer ID Application:"* ]]
             [[ "$signature" == *"TeamIdentifier=$APPLE_TEAM_ID"* ]]
             xcrun stapler validate "$app"
             spctl --assess --type execute --verbose=2 "$app"
+            plutil -extract LSMinimumSystemVersion raw -o - "$app/Contents/Info.plist"
           done
       - uses: actions/upload-artifact@v4
         with:
