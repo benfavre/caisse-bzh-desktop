@@ -16,6 +16,7 @@ function box(value) {
   if (!value || !hex(value.tag,32) || !hex(value.nonce,24) || typeof value.ciphertext !== 'string' || value.ciphertext.length < 24 || value.ciphertext.length > MAX_BOX || value.ciphertext.length % 4 || !/^[A-Za-z0-9+/]+={0,2}$/.test(value.ciphertext)) fail('peer_signal_box');
   return { tag:value.tag, nonce:value.nonce, ciphertext:value.ciphertext };
 }
+function parseHeader(line){if(Buffer.byteLength(line)>1400)fail('peer_signal_frame');return JSON.parse(line);}
 function reader(socket) {
   let buffer='',waiting=null,ended=false; const ready=[];
   function abort(){ended=true;if(waiting){waiting.reject(new Error('peer_signal_network'));waiting=null;}}
@@ -76,9 +77,9 @@ export class LocalPeerSignals {
     }
   }
   async receive(socket){
-    const epoch=this.handle,next=reader(socket),hello=JSON.parse(await next());
+    const epoch=this.handle,next=reader(socket),hello=parseHeader(await next());
     if(!this.live||epoch!==this.handle||hello.v!==1||hello.hello!==this.instance||!hex(hello.fromInstance,32))return socket.destroy();
-    write(socket,{v:1,instance:this.instance});const message=box(JSON.parse(await next()));
+    write(socket,{v:1,instance:this.instance});const header=parseHeader(await next()),message=box({...header,ciphertext:await next()});
     if(!this.live||epoch!==this.handle||!this.tags.has(message.tag)||this.messages.length>=32||this.bytes+message.ciphertext.length>QUEUE_BYTES){write(socket,{ok:false});return socket.end();}
     this.messages.push({...message,fromInstance:hello.fromInstance,at:performance.now()});this.bytes+=message.ciphertext.length;write(socket,{ok:true});socket.end();
   }
@@ -86,7 +87,7 @@ export class LocalPeerSignals {
   async send(handle,input){
     this.check(handle);const message=box(input),target=this.peers.get(input.instance+':'+message.tag);if(!target||performance.now()-target.seen>15000||!this.tags.has(message.tag))fail('peer_signal_target');
     if(this.sockets.size>=8)fail('peer_signal_busy');const epoch=this.handle,socket=createConnection({host:target.address,port:target.port});this.sockets.add(socket);socket.once('close',()=>this.sockets.delete(socket));const next=reader(socket);
-    try{write(socket,{v:1,hello:target.instance,fromInstance:this.instance});const hello=JSON.parse(await next());if(!this.live||epoch!==this.handle||!this.tags.has(message.tag)||hello.v!==1||hello.instance!==target.instance)fail('peer_signal_session_changed');write(socket,message);const receipt=JSON.parse(await next());if(!this.live||epoch!==this.handle||!this.tags.has(message.tag)||receipt.ok!==true)fail('peer_signal_not_queued');return {ok:true,queued:true};}finally{socket.destroy();}
+    try{write(socket,{v:1,hello:target.instance,fromInstance:this.instance});const hello=parseHeader(await next());if(!this.live||epoch!==this.handle||!this.tags.has(message.tag)||hello.v!==1||hello.instance!==target.instance)fail('peer_signal_session_changed');socket.write(JSON.stringify({tag:message.tag,nonce:message.nonce})+'\n'+message.ciphertext+'\n');const receipt=parseHeader(await next());if(!this.live||epoch!==this.handle||!this.tags.has(message.tag)||receipt.ok!==true)fail('peer_signal_not_queued');return {ok:true,queued:true};}finally{socket.destroy();}
   }
   stop(handle){return this.transition(async()=>{if(!this.live||handle!==this.handle)return {ok:true,stale:true};await this.reset();return {ok:true};});}
   close(){return this.transition(()=>this.reset());}

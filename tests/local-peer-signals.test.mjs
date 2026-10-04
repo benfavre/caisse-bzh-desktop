@@ -32,6 +32,7 @@ test('bounded receive queue rejects overflow and disabling a tag discards its pe
 });
 test('TCP framing rejects wrong process identity and closes idle sockets',async()=>{
  const a=create();let socket;try{await a.start([tag]);socket=createConnection({host:'127.0.0.1',port:a.port});await new Promise(resolve=>socket.once('connect',resolve));socket.write(JSON.stringify({v:1,hello:'f'.repeat(32),fromInstance:'e'.repeat(32)})+'\n');await new Promise(resolve=>socket.once('close',resolve));assert.equal(a.messages.length,0);
+  socket=createConnection({host:'127.0.0.1',port:a.port});socket.resume();socket.write(JSON.stringify({padding:'A'.repeat(1500)})+'\n');await new Promise(resolve=>socket.once('close',resolve));assert.equal(a.messages.length,0);
   socket=createConnection({host:'127.0.0.1',port:a.port});socket.resume();await new Promise(resolve=>socket.once('close',resolve));assert.equal(a.messages.length,0);
  }finally{socket?.destroy();await a.close();}
 });

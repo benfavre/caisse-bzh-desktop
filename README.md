@@ -70,7 +70,9 @@ same wire contract. It is not imported by the main process or exposed through
 preload, so normal application use starts no listener and gains no automatic
 reconnection yet. Existing manual WebRTC pairing remains unchanged.
 
-The carrier moves only opaque tags and encrypted boxes. A queue receipt is not
+The carrier moves only opaque tags and encrypted boxes. Small JSON headers
+are limited to 1,400 bytes; the base64 body has a separate bounded line, so
+Android does not parse a large encrypted payload as JSON. A queue receipt is not
 a kitchen or fiscal acknowledgment. The web layer must authenticate every box
 and bind it to a confirmed pairing, scope and fresh process instances before
 using its contents. Native process IDs and discovery tags alone prove no peer
