@@ -1,6 +1,6 @@
 import { OfflineRetry } from "./offline-retry.mjs";
 import { PeerSignalBridge, isPeerPage } from "./peer-signal-bridge.mjs";
-import { readCheckpoint, writeCheckpoint } from "./recovery-checkpoint.mjs";
+import { readCheckpoint, writeCheckpoint, stageCheckpoint } from "./recovery-checkpoint.mjs";
 import { CheckpointCollector } from "./checkpoint-cleanup.mjs";
 import { checkpointRoot } from "./checkpoint-fragments.mjs";
 import { receiptHtml } from "./receipt.mjs";
@@ -533,6 +533,11 @@ app.whenReady().then(async () => {
     trusted(event);
     if (event.senderFrame !== event.sender.mainFrame) throw new Error("Main frame required");
     return readCheckpoint(path.join(app.getPath("userData"), "offline-checkpoints"), input);
+  });
+  ipcMain.handle("recovery:checkpointStage", async (event, input) => {
+    trusted(event);
+    if (event.senderFrame !== event.sender.mainFrame) throw new Error("Main frame required");
+    return stageCheckpoint(path.join(app.getPath("userData"), "offline-checkpoints"), input);
   });
   ipcMain.handle("recovery:checkpointWrite", async (event, input) => {
     trusted(event);

@@ -2,6 +2,7 @@ import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { checkpointReferences, checkpointPart, verifyCheckpointParts, verifyCheckpointSuccessor } from './checkpoint-fragments.mjs';
+import { stagingParent, protectCheckpointPart, mayRetireCheckpointPart, forgetCheckpointPart } from './checkpoint-staging.mjs';
 const writes = new Map();
 export async function withCheckpointLock(directory, action) {
   const lock = path.resolve(directory), previous = writes.get(lock) || Promise.resolve();
@@ -18,7 +19,10 @@ export async function readCheckpoint(directory, input) {
   const checkpoint = await readFile(file, 'utf8').then(JSON.parse).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
   return { ok: true, checkpoint };
 }
-export async function writeCheckpoint(directory, input) {
+export async function stageCheckpoint(directory, input) {
+  return writeCheckpoint(directory, input?.checkpoint, stagingParent(input?.checkpoint, input?.parent));
+}
+export async function writeCheckpoint(directory, input, parent) {
   const file = location(directory, input), payload = JSON.stringify(input);
   if (!/^op_[a-f0-9]{32}$/.test(input.generation || '') || !Number.isSafeInteger(input.revision) || input.revision < 1 || input.backup?.version !== 2 || !Array.isArray(input.backup.queue) || !Array.isArray(input.backup.journal) || Buffer.byteLength(payload) > 4000000) throw new Error('Invalid recovery checkpoint');
   // The application has one main process. Serialize each scope, including
@@ -31,6 +35,7 @@ export async function writeCheckpoint(directory, input) {
       if (current.revision === input.revision && JSON.stringify(current) !== payload) throw new Error('Recovery revision reused');
       if (current.revision > input.revision) return { ok: true, generation: current.generation, revision: current.revision };
     }
+    if (Object.hasOwn(input.backup, 'checkpointPart')) await protectCheckpointPart(directory, input, parent);
     verifyCheckpointSuccessor(current, input);
     const refs = await verifyCheckpointParts(input, async scope => (await readCheckpoint(directory, { scope })).checkpoint);
     if (current && current.revision === input.revision) return { ok: true, generation: current.generation, revision: current.revision };
@@ -52,7 +57,9 @@ export async function writeCheckpoint(directory, input) {
           const part = (await readCheckpoint(directory, { scope: ref.scope })).checkpoint;
           if (!part) continue;
           checkpointPart(current, ref, part);
+          if (!await mayRetireCheckpointPart(directory, input, ref.scope)) continue;
           await unlink(location(directory, { scope: ref.scope })); retired++;
+          await forgetCheckpointPart(directory, ref.scope);
         } catch { cleanupPending = true; }
       }
       if (retired && process.platform !== 'win32') { try { const dir = await open(directory, 'r'); try { await dir.sync(); } finally { await dir.close(); } } catch { cleanupPending = true; } }

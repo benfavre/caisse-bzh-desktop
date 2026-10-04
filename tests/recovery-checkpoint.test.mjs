@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, readFile, access, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { readCheckpoint, writeCheckpoint, withCheckpointLock } from '../electron/recovery-checkpoint.mjs';
+import { readCheckpoint, writeCheckpoint, stageCheckpoint, withCheckpointLock } from '../electron/recovery-checkpoint.mjs';
 const entry = revision => ({ scope: 'a'.repeat(64), generation: 'op_' + 'b'.repeat(32), revision, backup: { version: 2, queue: [{ id: 'pending-' + revision }], journal: [] } });
 test('checkpoints retain the newest durable revision across reordered writes and process reopen', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'caisse-checkpoints-'));
@@ -38,7 +38,8 @@ function large(revision, label = 'first', scope = 'a'.repeat(64), shopId = 'shop
   }
   return {parts,parent:{scope,generation:'op_'+'b'.repeat(32),revision,backup:{version:2,context,queue:[{op:'checkpointFragmentsRequired'}],journal:[],checkpointFragments:{v:1,hash:digest(text),bytes:Buffer.byteLength(text),parts:refs}}},original};
 }
-async function stage(dir, pack){for(const part of pack.parts)await writeCheckpoint(dir,part);}
+async function stagePart(dir, checkpoint, parent){return stageCheckpoint(dir,{checkpoint,parent});}
+async function stage(dir, pack){for(const part of pack.parts)await stagePart(dir,part,pack.parent);}
 test('a complete replacement retires only superseded checkpoint parts and incomplete writers cannot publish a broken index',async()=>{
   const dir=await mkdtemp(path.join(tmpdir(),'caisse-checkpoint-pruning-')),a=large(1),b=large(2,'later'),foreign=large(1,'first','d'.repeat(64));
   await stage(dir,a);await writeCheckpoint(dir,a.parent);await stage(dir,foreign);await writeCheckpoint(dir,foreign.parent);
@@ -58,9 +59,9 @@ test('a complete replacement retires only superseded checkpoint parts and incomp
 test('racing parent commits validate retained parts again after a competing cleanup',async()=>{
   const dir=await mkdtemp(path.join(tmpdir(),'caisse-checkpoint-race-')),a=large(1),b=large(2,'later');
   await stage(dir,a);await writeCheckpoint(dir,a.parent);await stage(dir,b);await writeCheckpoint(dir,b.parent);
-  const nextA={...a.parent,revision:3},nextB={...b.parent,revision:4};await stage(dir,a);await stage(dir,b);
+  const nextA={...a.parent,revision:3},nextB={...b.parent,revision:4};await stage(dir,{...a,parent:nextA});await stage(dir,{...b,parent:nextB});
   const results=await Promise.allSettled([writeCheckpoint(dir,nextA),writeCheckpoint(dir,nextB)]);
-  assert.equal(results[0].status,'fulfilled');assert.equal(results[1].status,'rejected');assert.deepEqual((await readCheckpoint(dir,nextA)).checkpoint,nextA);
+  assert.equal(results[0].status,'fulfilled');assert.equal(results[1].status,'fulfilled');assert.deepEqual((await readCheckpoint(dir,nextB)).checkpoint,nextB);
   await stage(dir,b);await writeCheckpoint(dir,nextB);assert.deepEqual((await readCheckpoint(dir,nextB)).checkpoint,nextB);
 });
 test('altered content, reference order and scope cannot replace a complete native backup',async()=>{
@@ -88,8 +89,8 @@ async function collectAll(dir,scope,scan={}) {
 }
 test('bounded orphan collection preserves committed, foreign, malformed and unknown records',async()=>{
   const dir=await mkdtemp(path.join(tmpdir(),'caisse-orphan-scope-')),a=large(1),abandoned=large(2,'abandoned'),foreign=large(1,'foreign','d'.repeat(64));
-  await stage(dir,a);await writeCheckpoint(dir,a.parent);await stage(dir,abandoned);await stage(dir,foreign);await writeCheckpoint(dir,foreign.parent);
-  const stray=Array.from({length:22},(_,i)=>orphan(a.parent,'orphan '+i));for(const part of stray)await writeCheckpoint(dir,part);
+  await stage(dir,a);await writeCheckpoint(dir,a.parent);await stage(dir,{...abandoned,parent:{...abandoned.parent,revision:1}});await stage(dir,foreign);await writeCheckpoint(dir,foreign.parent);
+  const stray=Array.from({length:22},(_,i)=>orphan(a.parent,'orphan '+i));for(const part of stray)await stagePart(dir,part,a.parent);
   const corrupt=orphan(a.parent,'damaged');corrupt.backup.checkpointPart.text='changed';await writeCheckpoint(dir,corrupt);
   const unknown=path.join(dir,'e'.repeat(64)+'.json');await writeFile(unknown,'{broken');
   const result=await collectAll(dir,a.parent.scope);assert.ok(result.steps>1);assert.ok(result.retired>=23);assert.equal(result.pending,true);
@@ -98,16 +99,17 @@ test('bounded orphan collection preserves committed, foreign, malformed and unkn
   assert.deepEqual((await readCheckpoint(dir,corrupt)).checkpoint,corrupt);assert.equal(await readFile(unknown,'utf8'),'{broken');
   assert.deepEqual((await readCheckpoint(dir,a.parent)).checkpoint,a.parent);assert.deepEqual((await readCheckpoint(dir,foreign.parent)).checkpoint,foreign.parent);
 });
-test('an orphan collected during staging forces a writer to recopy before publishing',async()=>{
-  const dir=await mkdtemp(path.join(tmpdir(),'caisse-orphan-writer-')),a=large(1),b=large(2,'next');await stage(dir,a);await writeCheckpoint(dir,a.parent);await stage(dir,b);
-  await collectAll(dir,a.parent.scope);await assert.rejects(writeCheckpoint(dir,b.parent),/native_checkpoint_parts_invalid/);
+test('cleanup between every staged fragment and retry cannot interrupt a newer parent',async()=>{
+  const dir=await mkdtemp(path.join(tmpdir(),'caisse-orphan-writer-')),a=large(1),b=large(2,'next');await stage(dir,a);await writeCheckpoint(dir,a.parent);
+  for(const part of b.parts){await stagePart(dir,part,b.parent);await collectAll(dir,a.parent.scope);assert.deepEqual((await readCheckpoint(dir,part)).checkpoint,part);}
+  for(const part of b.parts){await stagePart(dir,part,a.parent);await collectAll(dir,a.parent.scope);assert.deepEqual((await readCheckpoint(dir,part)).checkpoint,part);}
   assert.deepEqual((await readCheckpoint(dir,a.parent)).checkpoint,a.parent);
-  await stage(dir,b);await writeCheckpoint(dir,b.parent);await collectAll(dir,b.parent.scope);
+  await writeCheckpoint(dir,b.parent);await collectAll(dir,b.parent.scope);
   for(const part of b.parts)assert.deepEqual((await readCheckpoint(dir,part)).checkpoint,part);
 });
 test('cleanup verifies a changed parent again and refuses incomplete current backups',async()=>{
   const dir=await mkdtemp(path.join(tmpdir(),'caisse-orphan-proof-')),a=large(1),b=large(2,'next');await stage(dir,a);await writeCheckpoint(dir,a.parent);
-  for(let i=0;i<25;i++)await writeCheckpoint(dir,orphan(a.parent,'unused '+i));
+  for(let i=0;i<25;i++)await stagePart(dir,orphan(a.parent,'unused '+i),a.parent);
   const scan={};assert.equal((await collectCheckpointBatch(dir,a.parent.scope,scan)).more,true);
   await stage(dir,b);await writeCheckpoint(dir,b.parent);await collectAll(dir,b.parent.scope,scan);
   for(const part of b.parts)assert.deepEqual((await readCheckpoint(dir,part)).checkpoint,part);
@@ -124,7 +126,7 @@ test('a compact root and process reopen collect old interrupted-cleanup parts',a
 });
 test('background collector progresses without another sale and closes cleanly',async()=>{
   const dir=await mkdtemp(path.join(tmpdir(),'caisse-orphan-background-')),parent={...entry(1),backup:{version:2,context:{identity:'account',shopId:'shop',training:false},queue:[{id:'pending'}],journal:[]}};
-  await writeCheckpoint(dir,parent);const part=orphan(parent,'abandoned background');await writeCheckpoint(dir,part);
+  await writeCheckpoint(dir,parent);const part=orphan(parent,'abandoned background');await stagePart(dir,part,parent);
   const messages=[],collector=new CheckpointCollector(dir,message=>messages.push(message));collector.schedule(parent.scope);collector.schedule(parent.scope);
   try{const until=Date.now()+5000;while((await readCheckpoint(dir,part)).checkpoint&&Date.now()<until)await new Promise(resolve=>setTimeout(resolve,25));assert.equal((await readCheckpoint(dir,part)).checkpoint,null);assert.deepEqual((await readCheckpoint(dir,parent)).checkpoint,parent);assert.deepEqual(messages,[]);}finally{collector.close();}
 });
@@ -205,4 +207,32 @@ test('temporary cleanup waits for the writer directory lock before examining a l
   try { await new Promise(resolve => setTimeout(resolve, 25)); assert.equal(finished, false); await access(file); }
   finally { release(); }
   await writing; assert.equal((await collecting).temporaryRetired, 1);
+});
+
+const { execFileSync } = await import('node:child_process');
+function collectInNewProcess(dir,scope){
+  const module=new URL('../electron/checkpoint-cleanup.mjs',import.meta.url).href;
+  const source=`import {collectCheckpointBatch} from ${JSON.stringify(module)}; const scan={}; while((await collectCheckpointBatch(process.argv[1],process.argv[2],scan)).more){}`;
+  execFileSync(process.execPath,['--input-type=module','-e',source,dir,scope],{timeout:10000});
+}
+test('durable revision fences survive process replacement while old-client parts wait until their writer exits',async()=>{
+  const dir=await mkdtemp(path.join(tmpdir(),'caisse-staging-process-')),a=large(1),b=large(2,'new writer');await stage(dir,a);await writeCheckpoint(dir,a.parent);await stage(dir,b);
+  const legacy=orphan(a.parent,'old-client staging');await writeCheckpoint(dir,legacy);
+  await collectAll(dir,a.parent.scope);assert.deepEqual((await readCheckpoint(dir,legacy)).checkpoint,legacy);
+  collectInNewProcess(dir,a.parent.scope);
+  assert.equal((await readCheckpoint(dir,legacy)).checkpoint,null);
+  for(const part of b.parts)assert.deepEqual((await readCheckpoint(dir,part)).checkpoint,part);
+  await writeCheckpoint(dir,b.parent);collectInNewProcess(dir,b.parent.scope);
+  for(const part of b.parts)assert.deepEqual((await readCheckpoint(dir,part)).checkpoint,part);
+});
+test('invalid staging metadata and foreign parents cannot retire or rewrite an original part',async()=>{
+  const dir=await mkdtemp(path.join(tmpdir(),'caisse-staging-invalid-')),a=large(1),b=large(2,'future');await stage(dir,a);await writeCheckpoint(dir,a.parent);
+  const part=b.parts[0];await stagePart(dir,part,b.parent);
+  for(const parent of [{...b.parent,scope:'d'.repeat(64)},{...b.parent,revision:0},{...b.parent,revision:1.5},{...b.parent,generation:'op_'+'f'.repeat(32)}])await assert.rejects(stagePart(dir,part,parent));
+  assert.deepEqual((await readCheckpoint(dir,part)).checkpoint,part);
+  const changed=structuredClone(part);changed.backup.checkpointPart.text+='!';await assert.rejects(stagePart(dir,changed,b.parent));
+  await writeFile(path.join(dir,part.scope+'.stage.json'),'{damaged');
+  assert.equal((await collectAll(dir,a.parent.scope)).pending,true);
+  assert.deepEqual((await readCheckpoint(dir,part)).checkpoint,part);
+  assert.deepEqual((await readCheckpoint(dir,a.parent)).checkpoint,a.parent);
 });

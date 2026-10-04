@@ -2,9 +2,11 @@ import { opendir, lstat, readFile, unlink, open } from 'node:fs/promises';
 import path from 'node:path';
 import { readCheckpoint, withCheckpointLock } from './recovery-checkpoint.mjs';
 import { checkpointRoot, orphanCheckpointReference, verifyCheckpointParts } from './checkpoint-fragments.mjs';
+import { mayRetireCheckpointPart, forgetCheckpointPart } from './checkpoint-staging.mjs';
 
 // One directory iterator per collector. No full directory listing, age-based
-// deletion, or persistent metadata required. A restart begins a fresh pass.
+// deletion. Durable per-part revision fences govern eligibility; a restart
+// begins a fresh iterator without dropping those fences.
 export async function collectCheckpointBatch(directory, scope, scan = {}) {
   return withCheckpointLock(directory, async () => {
     let examined = 0, retired = 0, temporaryRetired = 0, cleanupPending = false, verifiedThisBatch = false;
@@ -56,7 +58,9 @@ export async function collectCheckpointBatch(directory, scope, scan = {}) {
           if (!info.isFile() || info.size > 4000000) { cleanupPending = true; continue; }
           const part = JSON.parse(await readFile(file, 'utf8'));
           if (part.scope !== key || !orphanCheckpointReference(parent, part)) continue;
+          if (!await mayRetireCheckpointPart(directory, parent, key)) continue;
           await unlink(file); retired++;
+          await forgetCheckpointPart(directory, key);
         } catch (error) { if (error.code !== 'ENOENT') cleanupPending = true; }
       }
       if ((retired || temporaryRetired) && process.platform !== 'win32') {

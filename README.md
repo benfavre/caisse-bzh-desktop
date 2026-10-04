@@ -191,3 +191,12 @@ The app's direct-updater guard cannot schedule or veto a Store-managed update.
 Recovery storage is included in both distributions. Store activation, update
 preservation and device behavior require their own verification; a provisional
 AppX is not a published or certified Store release.
+
+
+## Checkpoint staging revisions (unpublished candidate)
+
+`checkpointStage({ checkpoint, parent })` records the highest parent revision that still needs an immutable fragment. The staged POS uses it when available; older bridges retain the existing write/retry protocol. Both direct predecessor retirement and background collection preserve fragments needed by a later revision. This prevents repeated cleanup from starving an in-progress replacement, including when a competing parent commits first.
+
+The desktop syncs a small `.stage.json` sidecar before acknowledging its part, under the same directory lock. The part and signed sale payloads are unchanged. A process restart retains the revision fence; missing, malformed or foreign staging metadata never authorizes deleting a protected original. Parts written by an old web client are conservatively protected for that native process; they become eligible after it exits, subject to the existing ownership and complete-backup checks. Unique staging temporary files and fences for incomplete future revisions remain retained. This is deliberately more conservative than treating every currently unreferenced part as disposable.
+
+Local validation: 74 desktop tests pass, including collection between every fragment write/retry, competing parent commits, preservation through a new process, invalid metadata and continued bounded reclamation. Native installer and hosted runtime verification for this changed candidate must be repeated; older 1.4.0 artifacts do not contain this fix.
