@@ -1,3 +1,4 @@
+import { OfflineRetry } from "./offline-retry.mjs";
 import { PeerSignalBridge, isPeerPage } from "./peer-signal-bridge.mjs";
 import { readCheckpoint, writeCheckpoint } from "./recovery-checkpoint.mjs";
 import { CheckpointCollector } from "./checkpoint-cleanup.mjs";
@@ -16,7 +17,7 @@ import path from "node:path";
 import os from "node:os";
 import { existsSync } from "node:fs";
 import { readFile, writeFile, unlink, mkdir } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import electronUpdater from "electron-updater";
 import { APP_ORIGIN, isInAppUrl, isAppPage, externalUrl, shortcutUrl, permissionAllowed, startUrl } from "./security.mjs";
 import { UpdateController, nightlyInstallDue, isNewerVersion } from "./updater.mjs";
@@ -30,7 +31,6 @@ let win = null;
 let controller = null;
 let settings = { ...DEFAULT_SETTINGS };
 let settingsFile = "";
-let retryTimer = null;
 let awakeId = null;
 let boundsTimer = null;
 let checkpointCollector = null;
@@ -86,26 +86,16 @@ function notify(title, body, onClick) {
 // the till was on (a kitchen screen stays on Cuisine), else its start page.
 const recoverUrl = () => lastAppUrl || startUrl(settings.startPage);
 
+const offlinePage = pathToFileURL(path.join(here, "offline.html")).href;
+const offlineRetry = new OfflineRetry({
+  isWaiting: () => !!win && !win.isDestroyed() && !win.webContents.isLoadingMainFrame() && win.webContents.getURL().split("#")[0] === offlinePage,
+  online: () => net.isOnline(),
+  request: () => net.request({ method: "HEAD", url: APP_ORIGIN + "/" }),
+  recover: () => win?.loadURL(recoverUrl()).catch(() => {}),
+});
 function showOffline() {
   if (!win || win.isDestroyed()) return;
   win.loadFile(path.join(here, "offline.html")).catch(() => {});
-  clearInterval(retryTimer);
-  // Come back on our own as soon as caisse.bzh answers again.
-  retryTimer = setInterval(() => {
-    if (!win || win.isDestroyed()) return clearInterval(retryTimer);
-    if (!net.isOnline()) return;
-    const req = net.request({ method: "HEAD", url: APP_ORIGIN + "/" });
-    req.on("response", (res) => {
-      res.on("data", () => {});
-      res.on("error", () => {});
-      if (res.statusCode < 500) {
-        clearInterval(retryTimer);
-        win?.loadURL(recoverUrl()).catch(() => {});
-      }
-    });
-    req.on("error", () => {});
-    req.end();
-  }, 15000);
 }
 
 // ── keep the till's screen on during service ─────────────────────────────────
@@ -350,10 +340,11 @@ function createWindow() {
   // The web app can recognise the desktop shell (e.g. to offer silent printing).
   win.webContents.setUserAgent(win.webContents.getUserAgent() + " caisse-bzh-desktop/" + app.getVersion());
   win.webContents.on("did-finish-load", () => { peerDocumentActive = true; win?.webContents.setZoomFactor(settings.zoom); });
-  win.webContents.on("did-start-navigation", (_event, _url, _inPlace, main) => { if (main) stopPeerSignals(); });
+  win.webContents.on("did-stop-loading", () => offlineRetry.start());
+  win.webContents.on("did-start-navigation", (_event, _url, _inPlace, main) => { if (main) { stopPeerSignals(); if (!_inPlace) offlineRetry.stop(); } });
   win.webContents.on("did-navigate-in-page", (_event, _url, main) => { if (main) peerDocumentActive = true; });
-  win.webContents.on("destroyed", stopPeerSignals);
-  win.webContents.on("render-process-gone", stopPeerSignals);
+  win.webContents.on("destroyed", () => { stopPeerSignals(); offlineRetry.stop(); });
+  win.webContents.on("render-process-gone", () => { stopPeerSignals(); offlineRetry.stop(); });
   for (const ev of ["resize", "move", "maximize", "unmaximize"]) win.on(ev, saveBoundsSoon);
 
   win.webContents.on("will-navigate", (event, url) => {
@@ -385,7 +376,7 @@ function createWindow() {
     if (isMainFrame && code !== -3 && isInAppUrl(url)) showOffline();
   });
   win.webContents.on("did-navigate-in-page", (_e, url) => {
-    if (url.startsWith("file://") && url.includes("#retry-")) win.loadURL(recoverUrl()).catch(() => showOffline());
+    if (url.startsWith("file://") && url.includes("#retry-")) win.loadURL(recoverUrl()).catch(() => {});
   });
   // A crashed or frozen page must not leave a till on a blank screen: reload
   // (at most 3 times in 5 minutes, then the offline page with its retry button).
@@ -394,7 +385,7 @@ function createWindow() {
     if (details.reason === "clean-exit") return;
     const now = Date.now();
     crashes = crashes.filter((t) => now - t < 5 * 60 * 1000).concat(now);
-    if (crashes.length <= 3) win?.loadURL(recoverUrl()).catch(() => showOffline());
+    if (crashes.length <= 3) win?.loadURL(recoverUrl()).catch(() => {});
     else showOffline();
   });
   // A page frozen for a minute is reloaded where it was: a stuck till is worse
@@ -415,7 +406,7 @@ function createWindow() {
   win.webContents.on("did-navigate", (_e, url) => remember(url));
   win.webContents.on("did-navigate-in-page", (_e, url, isMainFrame) => isMainFrame && remember(url));
   win.on("page-title-updated", (e) => e.preventDefault());
-  win.loadURL(startUrl(settings.startPage)).catch(() => showOffline());
+  win.loadURL(startUrl(settings.startPage)).catch(() => {});
 }
 
 app.whenReady().then(async () => {

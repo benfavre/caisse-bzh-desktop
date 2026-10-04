@@ -121,3 +121,20 @@ private bridge addresses. This is not physical shop-LAN verification. The normal
 web panel has not enabled automatic discovery; native release publication remains
 disabled. See Node's [UDP interface and send contract](https://nodejs.org/api/dgram.html)
 for the socket behavior used here.
+
+
+## Offline navigation retries (staged 1.4.0)
+
+Only the displayed native offline page owns automatic connectivity polling.
+Leaving it cancels the timer and current request; a delayed reply cannot reload
+a working POS, kitchen or authentication page. Probes do not overlap and expire
+after ten seconds. Returning to a new offline page starts a new generation, so
+an earlier reply cannot navigate or clear its request. A current successful
+probe still returns to the remembered application page. Main-frame load errors
+select the fallback once; an aborted load promise does not create another one.
+
+Seven deterministic tests cover stale replies, replacement sessions, bounded
+requests, missing connectivity, server errors and failures during request setup.
+The packaged-app regression forces a native fallback, resumes a kitchen page,
+then delivers the old network response and verifies that the page stays intact.
+It also checks cancellation of future polling and successful current recovery.
