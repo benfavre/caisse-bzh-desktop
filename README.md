@@ -86,3 +86,18 @@ use real loopback UDP/TCP sockets; they do not establish physical LAN multicast,
 firewall permission or app cold-reconnection behavior. The full native suite is
 46 tests. Pairing-key persistence, authenticated resumption, trusted bridge
 exposure and native permission/lifecycle handling remain required integration.
+
+
+The staged desktop now exposes document-owned opaque signaling through five
+`peerSignal*` preload methods. Only the main POS/kitchen frame can call them;
+reload, navigation, renderer exit and suspend invalidate listeners and pending
+results. Startup advertises no tags until caller ownership is checked again.
+Stale handles cannot stop a replacement, and the carrier's 15-second heartbeat
+lease remains required. No page starts discovery merely by loading the wrapper;
+the automatic web reconnection controller is still being integrated.
+
+The Mac package now declares its local-network purpose in `Info.plist`, as
+required by [Apple's local network privacy guidance](https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy).
+Local verification passes 52 tests and the actual packaged Linux IPC smoke for
+POS/kitchen access, subframe navigation, reload, suspension, logout-page refusal
+and stale-handle safety. This does not establish physical Mac/Windows networking.

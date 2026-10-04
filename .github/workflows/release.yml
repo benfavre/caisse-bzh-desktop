@@ -63,6 +63,7 @@ jobs:
             xcrun stapler validate "$app"
             spctl --assess --type execute --verbose=2 "$app"
             plutil -extract LSMinimumSystemVersion raw -o - "$app/Contents/Info.plist"
+            plutil -extract NSLocalNetworkUsageDescription raw -o - "$app/Contents/Info.plist"
           done
       - uses: actions/upload-artifact@v4
         with:

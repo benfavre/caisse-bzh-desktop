@@ -35,6 +35,7 @@ module.exports = {
   },
   mac: {
     minimumSystemVersion: "13.0",
+    extendInfo: { NSLocalNetworkUsageDescription: "Retrouver les caisses et écrans cuisine associés sur le réseau local, même sans Internet." },
     forceCodeSigning: requireMacSigning || !!process.env.CSC_LINK,
     target: ["dmg", "zip"],
     category: "public.app-category.business",

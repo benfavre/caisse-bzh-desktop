@@ -1,3 +1,4 @@
+import { PeerSignalBridge, isPeerPage } from "./peer-signal-bridge.mjs";
 import { readCheckpoint, writeCheckpoint } from "./recovery-checkpoint.mjs";
 import { CheckpointCollector } from "./checkpoint-cleanup.mjs";
 import { checkpointRoot } from "./checkpoint-fragments.mjs";
@@ -33,6 +34,12 @@ let retryTimer = null;
 let awakeId = null;
 let boundsTimer = null;
 let checkpointCollector = null;
+let peerDocumentActive = false, peerSuspended = false;
+const peerSignals = new PeerSignalBridge({ authorize(event) {
+  if (!peerDocumentActive || peerSuspended || !win || win.isDestroyed() || win.webContents.isLoadingMainFrame() || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame || !isPeerPage(event.senderFrame?.url)) throw new Error("peer_signal_forbidden");
+  return event.senderFrame;
+} });
+function stopPeerSignals() { peerDocumentActive = false; void peerSignals.invalidate().catch(() => {}); }
 let crashes = [];
 let lastAppUrl = "";
 let frozenTimer = null;
@@ -342,7 +349,11 @@ function createWindow() {
   });
   // The web app can recognise the desktop shell (e.g. to offer silent printing).
   win.webContents.setUserAgent(win.webContents.getUserAgent() + " caisse-bzh-desktop/" + app.getVersion());
-  win.webContents.on("did-finish-load", () => win?.webContents.setZoomFactor(settings.zoom));
+  win.webContents.on("did-finish-load", () => { peerDocumentActive = true; win?.webContents.setZoomFactor(settings.zoom); });
+  win.webContents.on("did-start-navigation", (_event, _url, _inPlace, main) => { if (main) stopPeerSignals(); });
+  win.webContents.on("did-navigate-in-page", (_event, _url, main) => { if (main) peerDocumentActive = true; });
+  win.webContents.on("destroyed", stopPeerSignals);
+  win.webContents.on("render-process-gone", stopPeerSignals);
   for (const ev of ["resize", "move", "maximize", "unmaximize"]) win.on(ev, saveBoundsSoon);
 
   win.webContents.on("will-navigate", (event, url) => {
@@ -455,6 +466,10 @@ app.whenReady().then(async () => {
     buildMenu();
   });
 
+  ipcMain.handle("peerSignals:start", (event, input) => peerSignals.start(event, input));
+  for (const method of ["configure", "poll", "send", "stop"]) ipcMain.handle("peerSignals:" + method, (event, input) => peerSignals.call(event, method, input));
+  powerMonitor.on("suspend", () => { peerSuspended = true; stopPeerSignals(); });
+  powerMonitor.on("resume", () => { peerSuspended = false; peerDocumentActive = true; });
   ipcMain.handle("desktop:info", (event) => {
     trusted(event);
     return {
@@ -585,6 +600,7 @@ app.whenReady().then(async () => {
 process.on("uncaughtException", (e) => log.error("uncaught", e));
 app.on("window-all-closed", () => app.quit());
 app.on("before-quit", () => {
+  stopPeerSignals();
   checkpointCollector?.close();
   // Ordinary app closure preserves pending work. Only a recently verified idle
   // register may also install a downloaded update during that closure.

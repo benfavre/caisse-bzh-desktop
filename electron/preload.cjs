@@ -4,6 +4,11 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("caisseDesktop", {
   printDocumentKinds: Object.freeze(["sale", "refund", "z", "service"]),
+  peerSignalStart: (input) => ipcRenderer.invoke("peerSignals:start", { tags: input?.tags }),
+  peerSignalConfigure: (input) => ipcRenderer.invoke("peerSignals:configure", { handle: input?.handle, tags: input?.tags }),
+  peerSignalPoll: (input) => ipcRenderer.invoke("peerSignals:poll", { handle: input?.handle }),
+  peerSignalSend: (input) => ipcRenderer.invoke("peerSignals:send", { handle: input?.handle, instance: input?.instance, tag: input?.tag, nonce: input?.nonce, ciphertext: input?.ciphertext }),
+  peerSignalStop: (input) => ipcRenderer.invoke("peerSignals:stop", { handle: input?.handle }),
   info: () => ipcRenderer.invoke("desktop:info"),
   checkpointRead: (input) => ipcRenderer.invoke("recovery:checkpointRead", { scope: input?.scope }),
   checkpointWrite: (input) => ipcRenderer.invoke("recovery:checkpointWrite", input),
