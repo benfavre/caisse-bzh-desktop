@@ -53,3 +53,10 @@ Les commandes et ventes locales de la caisse sont conservées dans le profil de 
 L’impression inscrit une réservation durable avant l’envoi au système. Une interruption ne déclenche aucun renvoi automatique. Un accusé du système d’impression ne prouve pas la sortie papier ; vérifier le ticket puis demander un duplicata si nécessaire.
 
 Une copie native conserve aussi les commandes en attente, les identités des paiements incertains et les demandes de remboursement. Chaque instantané a une génération et une révision : une écriture retardée ne remplace jamais la plus récente. Après perte d’IndexedDB, reconnecter le même compte et établissement pour restaurer les demandes ; les commandes restaurées doivent être rapprochées du serveur avant un nouvel encaissement hors ligne. Les autorisations de création de ventes ne sont pas copiées. Une panne du disque est signalée et bloque le succès de l’enregistrement ; une vente déjà enregistrée reste une vente, avec un avertissement de sauvegarde. Une désinstallation avec suppression du profil détruit aussi ces copies.
+
+
+## Native checkpoint part lifecycle (staged 1.4.0)
+
+The shared web engine partitions large recovery snapshots. Before a native parent index is committed, the desktop validates every part, scoped hash, byte length and the reconstructed JSON. All checkpoint writes in a directory are serialized. A complete replacement is synced before superseded parts from its predecessor are retired. Missing or altered parts cannot publish an incomplete index; competing web writers can recopy their immutable parts and retry the same revision. The original sale journal is separate and is never pruned here.
+
+A reader racing retirement can reread a strictly newer index under the same generation. Ship the current shared web recovery assets before publishing this wrapper. This is not general garbage collection: orphan parts from failed staging or interrupted cleanup may remain, and total original history stays retained. Cleanup failures leave extra copies without invalidating an already durable replacement.
