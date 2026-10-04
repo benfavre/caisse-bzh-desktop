@@ -138,3 +138,21 @@ requests, missing connectivity, server errors and failures during request setup.
 The packaged-app regression forces a native fallback, resumes a kitchen page,
 then delivers the old network response and verifies that the page stays intact.
 It also checks cancellation of future polling and successful current recovery.
+
+
+## Interrupted checkpoint temporary files (staged 1.4.0)
+
+The background collector now removes writer-generated temporary files only when
+an exact byte-for-byte copy is committed in the current checkpoint root or one
+of its retained parts, and the complete current backup verifies. Cleanup shares
+the directory lock with writers and examines at most eight entries per batch.
+It never uses file age as evidence. Unique, partial, malformed, oversized,
+foreign, unknown-name and non-file candidates remain untouched. Original sales
+remain in their separate journal. The collector revalidates the backup for a
+batch containing duplicates even when a previous batch cached the same parent.
+
+Four regressions cover interrupted publication followed by successful retry,
+bounded duplicate cleanup, preservation including invalid UTF-8 that decodes to
+the same text, damage after an earlier verification and serialization with an
+active writer. This bounds redundant crash leftovers; it does not bound all
+retained business history or automatically dispose of unique recovery files.

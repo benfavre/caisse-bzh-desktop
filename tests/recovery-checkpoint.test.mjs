@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, readFile } from 'node:fs/promises';
+import { mkdtemp, writeFile, readFile, access, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { readCheckpoint, writeCheckpoint } from '../electron/recovery-checkpoint.mjs';
+import { readCheckpoint, writeCheckpoint, withCheckpointLock } from '../electron/recovery-checkpoint.mjs';
 const entry = revision => ({ scope: 'a'.repeat(64), generation: 'op_' + 'b'.repeat(32), revision, backup: { version: 2, queue: [{ id: 'pending-' + revision }], journal: [] } });
 test('checkpoints retain the newest durable revision across reordered writes and process reopen', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'caisse-checkpoints-'));
@@ -28,7 +28,7 @@ test('invalid or corrupt checkpoints fail without erasing the saved file', async
   assert.equal(await readFile(file, 'utf8'), 'damaged');
 });
 
-const { createHash } = await import('node:crypto');
+const { createHash, randomUUID } = await import('node:crypto');
 const digest = text => createHash('sha256').update(text).digest('hex');
 function large(revision, label = 'first', scope = 'a'.repeat(64), shopId = 'shop') {
   const context = {identity:'account',shopId,training:false}, original = {version:2,context,queue:[{id:label}],journal:[],history:[(shopId==='shop'?'x':'y').repeat(1100000)]}, text=JSON.stringify(original), parts=[], refs=[];
@@ -83,8 +83,8 @@ function orphan(parent, text) {
   return {scope,generation:'op_'+hash.slice(0,32),revision:1,backup:{version:2,context:parent.backup.context,queue:[{op:'checkpointFragmentsRequired'}],journal:[],checkpointPart:{v:1,hash,bytes:Buffer.byteLength(text),text}}};
 }
 async function collectAll(dir,scope,scan={}) {
-  let retired=0,pending=false,steps=0;
-  while(true){const r=await collectCheckpointBatch(dir,scope,scan);assert.ok(r.examined<=8);retired+=r.retired;pending||=r.cleanupPending;steps++;if(!r.more)return {retired,pending,steps};assert.ok(steps<100);}
+  let retired=0,temporaryRetired=0,pending=false,steps=0;
+  while(true){const r=await collectCheckpointBatch(dir,scope,scan);assert.ok(r.examined<=8);retired+=r.retired;temporaryRetired+=r.temporaryRetired;pending||=r.cleanupPending;steps++;if(!r.more)return {retired,temporaryRetired,pending,steps};assert.ok(steps<100);}
 }
 test('bounded orphan collection preserves committed, foreign, malformed and unknown records',async()=>{
   const dir=await mkdtemp(path.join(tmpdir(),'caisse-orphan-scope-')),a=large(1),abandoned=large(2,'abandoned'),foreign=large(1,'foreign','d'.repeat(64));
@@ -127,4 +127,82 @@ test('background collector progresses without another sale and closes cleanly',a
   await writeCheckpoint(dir,parent);const part=orphan(parent,'abandoned background');await writeCheckpoint(dir,part);
   const messages=[],collector=new CheckpointCollector(dir,message=>messages.push(message));collector.schedule(parent.scope);collector.schedule(parent.scope);
   try{const until=Date.now()+5000;while((await readCheckpoint(dir,part)).checkpoint&&Date.now()<until)await new Promise(resolve=>setTimeout(resolve,25));assert.equal((await readCheckpoint(dir,part)).checkpoint,null);assert.deepEqual((await readCheckpoint(dir,parent)).checkpoint,parent);assert.deepEqual(messages,[]);}finally{collector.close();}
+});
+
+const temporaryFile = dir => path.join(dir, '.' + randomUUID() + '.tmp');
+test('interrupted temporary copies are collected only after identical root and retained parts are committed', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'caisse-temporary-recovery-')), first = large(1), next = large(2, 'later');
+  await stage(dir, first); await writeCheckpoint(dir, first.parent); await stage(dir, next);
+  // A previous process synced this candidate but died before publishing it.
+  const pendingRoot = temporaryFile(dir);
+  await writeFile(pendingRoot, JSON.stringify(next.parent));
+  assert.equal((await collectAll(dir, first.parent.scope)).temporaryRetired, 0);
+  assert.equal(await readFile(pendingRoot, 'utf8'), JSON.stringify(next.parent));
+  // Normal retry recopies any orphan parts, commits, then permits cleanup.
+  await stage(dir, next); await writeCheckpoint(dir, next.parent);
+  const copies = [pendingRoot];
+  for (let i = 0; i < 20; i++) {
+    const file = temporaryFile(dir); copies.push(file);
+    await writeFile(file, JSON.stringify(i % 2 ? next.parent : next.parts[0]));
+  }
+  const result = await collectAll(dir, next.parent.scope);
+  assert.equal(result.temporaryRetired, copies.length); assert.equal(result.pending, false); assert.ok(result.steps > 1);
+  for (const file of copies) await assert.rejects(access(file), { code: 'ENOENT' });
+  assert.deepEqual((await readCheckpoint(dir, next.parent)).checkpoint, next.parent);
+  for (const part of next.parts) assert.deepEqual((await readCheckpoint(dir, part)).checkpoint, part);
+});
+
+test('temporary cleanup preserves unique, damaged, oversized, foreign and unknown files', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'caisse-temporary-preserve-')), a = large(1), foreign = large(1, 'foreign', 'd'.repeat(64));
+  a.parent.diagnostic = '\ufffd';
+  await stage(dir, a); await writeCheckpoint(dir, a.parent); await stage(dir, foreign); await writeCheckpoint(dir, foreign.parent);
+  const original = new Map();
+  for (const text of [JSON.stringify(large(2, 'unique pending').parent), JSON.stringify(foreign.parent), JSON.stringify(foreign.parts[0]), '{partial', 'x'.repeat(4000001), JSON.stringify({ ...a.parts[0], altered: true })]) {
+    const file = temporaryFile(dir); original.set(file, text); await writeFile(file, text);
+  }
+  // Invalid UTF-8 must not compare equal after replacement-character decoding.
+  const invalid = temporaryFile(dir), bytes = Buffer.from(JSON.stringify(a.parent));
+  const offset = bytes.indexOf(Buffer.from('\ufffd')); assert.ok(offset >= 0);
+  // A truncated four-byte sequence decodes to one replacement character,
+  // exactly like the valid three-byte U+FFFD, without changing file length.
+  Buffer.from([0xf0, 0x90, 0x80]).copy(bytes, offset);
+  assert.deepEqual(JSON.parse(bytes.toString('utf8')), a.parent);
+  await writeFile(invalid, bytes);
+  const unknown = path.join(dir, '.not-a-writer-id.tmp'); original.set(unknown, JSON.stringify(a.parent)); await writeFile(unknown, original.get(unknown));
+  const directory = temporaryFile(dir); await mkdir(directory);
+  const result = await collectAll(dir, a.parent.scope);
+  assert.equal(result.temporaryRetired, 0); assert.equal(result.pending, true);
+  for (const [file, text] of original) assert.equal(await readFile(file, 'utf8'), text);
+  assert.deepEqual(await readFile(invalid), bytes); await access(directory);
+  assert.deepEqual((await readCheckpoint(dir, a.parent)).checkpoint, a.parent);
+});
+
+test('temporary duplicate cleanup revalidates complete recovery even with an unchanged cached parent', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'caisse-temporary-proof-')), a = large(1), scan = {};
+  await stage(dir, a); await writeCheckpoint(dir, a.parent); await collectAll(dir, a.parent.scope, scan);
+  const rootCopy = temporaryFile(dir), partCopy = temporaryFile(dir);
+  await writeFile(rootCopy, JSON.stringify(a.parent)); await writeFile(partCopy, JSON.stringify(a.parts[0]));
+  const damaged = path.join(dir, a.parts.at(-1).scope + '.json'), text = await readFile(damaged, 'utf8');
+  await writeFile(damaged, '{damaged');
+  const result = await collectAll(dir, a.parent.scope, scan);
+  assert.equal(result.temporaryRetired, 0); assert.equal(result.pending, true);
+  assert.equal(await readFile(rootCopy, 'utf8'), JSON.stringify(a.parent));
+  assert.equal(await readFile(partCopy, 'utf8'), JSON.stringify(a.parts[0]));
+  await writeFile(damaged, text);
+  assert.equal((await collectAll(dir, a.parent.scope, scan)).temporaryRetired, 2);
+});
+
+test('temporary cleanup waits for the writer directory lock before examining a live write', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'caisse-temporary-lock-')), a = large(1);
+  await stage(dir, a); await writeCheckpoint(dir, a.parent);
+  let release, entered;
+  const gate = new Promise(resolve => { release = resolve; }), ready = new Promise(resolve => { entered = resolve; });
+  const file = temporaryFile(dir);
+  const writing = withCheckpointLock(dir, async () => { await writeFile(file, JSON.stringify(a.parent)); entered(); await gate; });
+  await ready;
+  let finished = false;
+  const collecting = collectAll(dir, a.parent.scope).then(result => { finished = true; return result; });
+  try { await new Promise(resolve => setTimeout(resolve, 25)); assert.equal(finished, false); await access(file); }
+  finally { release(); }
+  await writing; assert.equal((await collecting).temporaryRetired, 1);
 });
