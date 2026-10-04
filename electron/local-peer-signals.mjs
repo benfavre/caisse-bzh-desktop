@@ -1,4 +1,4 @@
-import { createServer, createConnection } from 'node:net';
+import { createServer, createConnection, isIPv4 } from 'node:net';
 import { createSocket } from 'node:dgram';
 import { randomBytes } from 'node:crypto';
 import { networkInterfaces } from 'node:os';
@@ -6,7 +6,10 @@ import { networkInterfaces } from 'node:os';
 export const SIGNAL_GROUP = '239.255.67.83', SIGNAL_PORT = 43183;
 const MAX_LINE = 100000, MAX_BOX = 90000, QUEUE_BYTES = 1048576;
 const hex = (value, size) => typeof value === 'string' && new RegExp('^[a-f0-9]{'+size+'}$').test(value);
-const privateAddress = value => /^(127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/.test(value || '');
+export const privateAddress = value => typeof value === 'string' && isIPv4(value) && /^(127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/.test(value);
+export function discoveryAddresses(interfaces) {
+  return [...new Set(Object.values(interfaces).flatMap(entries => (entries || []).filter(entry => entry.family === 'IPv4' && !entry.internal && privateAddress(entry.address) && !entry.address.startsWith('127.')).map(entry => entry.address)))].slice(0,32);
+}
 const fail = code => { throw new Error(code); };
 function tags(values) {
   if (!Array.isArray(values) || values.length > 64 || values.some(value => !hex(value,32))) fail('peer_signal_tags');
@@ -35,8 +38,9 @@ const write = (socket,value) => socket.write(JSON.stringify(value)+'\n');
 // Opaque signaling only. Tags/ciphertexts are supplied by the authenticated web
 // resumption layer; receipt means queued locally, never a kitchen/fiscal ACK.
 export class LocalPeerSignals {
-  constructor({bind='0.0.0.0',multicast=true,discoveryPort=multicast?SIGNAL_PORT:0,leaseMs=15000}={}) {
+  constructor({bind='0.0.0.0',multicast=true,discoveryPort=multicast?SIGNAL_PORT:0,leaseMs=15000,interfaces=networkInterfaces}={}) {
     this.bind=bind;this.multicast=multicast;this.discoveryPort=discoveryPort;this.leaseMs=leaseMs;this.sockets=new Set();this.peers=new Map();this.messages=[];this.bytes=0;this.timer=null;this.changes=Promise.resolve();
+    this.interfaces=interfaces;this.memberships=new Set();this.broadcast=null;
   }
   transition(action){const work=this.changes.catch(()=>{}).then(action);this.changes=work;return work;}
   start(values){const wanted=tags(values);return this.transition(()=>this.open(wanted));}
@@ -70,10 +74,29 @@ export class LocalPeerSignals {
     if(!this.live)return;if(performance.now()-this.touched>this.leaseMs){void this.close();return;}
     for(const [key,peer]of this.peers)if(performance.now()-peer.seen>15000)this.peers.delete(key);
     this.messages=this.messages.filter(value=>performance.now()-value.at<=15000);this.bytes=this.messages.reduce((n,value)=>n+value.ciphertext.length,0);
-    if(!this.multicast||performance.now()-this.lastAdvert<5000)return;this.lastAdvert=performance.now();
-    for(const entries of Object.values(networkInterfaces()))for(const entry of entries||[]){if(entry.family!=='IPv4'||entry.internal)continue;
-      try{this.udp.addMembership(SIGNAL_GROUP,entry.address);}catch{}
-      try{this.udp.setMulticastInterface(entry.address);for(const packet of this.advertisements())this.udp.send(packet,SIGNAL_PORT,SIGNAL_GROUP);}catch{this.error='peer_signal_network';}
+    if(!this.multicast||this.broadcast||performance.now()-this.lastAdvert<5000)return;this.lastAdvert=performance.now();
+    const job={epoch:this.handle,udp:this.udp};this.broadcast=job;
+    void this.advertise(job).catch(()=>{if(this.live&&this.handle===job.epoch)this.error='peer_signal_network';}).finally(()=>{if(this.broadcast===job)this.broadcast=null;});
+  }
+  async advertise(job){
+    const current=()=>this.live&&this.handle===job.epoch&&this.udp===job.udp;
+    const addresses=discoveryAddresses(this.interfaces());
+    for(const address of this.memberships)if(!addresses.includes(address)){
+      try{job.udp.dropMembership(SIGNAL_GROUP,address);}catch{}this.memberships.delete(address);
+    }
+    for(const address of addresses){
+      if(!current())return;
+      try{
+        if(!this.memberships.has(address)){job.udp.addMembership(SIGNAL_GROUP,address);this.memberships.add(address);}
+        job.udp.setMulticastInterface(address);
+        // send() may finish asynchronously. Never switch the shared socket's
+        // multicast interface until its previous packet has completed.
+        for(let index=0;;index++){
+          if(!current())return;
+          const packet=this.advertisements()[index];if(packet===undefined)break;
+          await new Promise((resolve,reject)=>job.udp.send(packet,SIGNAL_PORT,SIGNAL_GROUP,error=>error?reject(error):resolve()));
+        }
+      }catch{if(current())this.error='peer_signal_network';}
     }
   }
   async receive(socket){
@@ -91,7 +114,7 @@ export class LocalPeerSignals {
   }
   stop(handle){return this.transition(async()=>{if(!this.live||handle!==this.handle)return {ok:true,stale:true};await this.reset();return {ok:true};});}
   close(){return this.transition(()=>this.reset());}
-  async reset(){this.live=false;clearInterval(this.timer);this.timer=null;for(const socket of this.sockets)socket.destroy();this.sockets.clear();this.peers.clear();this.messages=[];this.bytes=0;const server=this.server,udp=this.udp;this.server=null;this.udp=null;
+  async reset(){this.live=false;clearInterval(this.timer);this.timer=null;this.broadcast=null;this.memberships.clear();for(const socket of this.sockets)socket.destroy();this.sockets.clear();this.peers.clear();this.messages=[];this.bytes=0;const server=this.server,udp=this.udp;this.server=null;this.udp=null;
     if(server)await new Promise(resolve=>{try{server.close(resolve);}catch{resolve();}});if(udp)await new Promise(resolve=>{try{udp.close(resolve);}catch{resolve();}});
   }
 }

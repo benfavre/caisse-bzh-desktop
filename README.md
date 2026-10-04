@@ -101,3 +101,23 @@ required by [Apple's local network privacy guidance](https://developer.apple.com
 Local verification passes 52 tests and the actual packaged Linux IPC smoke for
 POS/kitchen access, subframe navigation, reload, suspension, logout-page refusal
 and stale-handle safety. This does not establish physical Mac/Windows networking.
+
+
+### Private discovery interfaces
+
+Discovery now advertises only on private/link-local, non-loopback IPv4 addresses,
+bounded to 32 source addresses. Public interfaces, IPv6 and malformed addresses
+are excluded; loopback remains available to the existing direct socket fixtures.
+On mixed public/private interfaces, the selected private IPv4 address is explicit.
+The UDP sender waits for each send callback before changing interfaces, rechecks
+current tags between packets, and drops memberships when an address disappears.
+A failed interface does not fall back to the system default. Retired listener
+callbacks cannot continue an old advertisement burst.
+
+All 55 desktop tests pass locally, including interface selection, asynchronous
+send ordering, tag removal, cancellation and interface failure checks. A fresh
+two-carrier multicast probe still discovers zero peers on this cloud host's five
+private bridge addresses. This is not physical shop-LAN verification. The normal
+web panel has not enabled automatic discovery; native release publication remains
+disabled. See Node's [UDP interface and send contract](https://nodejs.org/api/dgram.html)
+for the socket behavior used here.

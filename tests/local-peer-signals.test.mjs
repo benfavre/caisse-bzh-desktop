@@ -65,3 +65,41 @@ test('retired listener callbacks cannot discover peers or close a replacement se
   await new Promise(resolve=>setTimeout(resolve,10));const status=a.poll(current.handle);assert.deepEqual(status.peers,[]);assert.equal(status.error,null);
  }finally{await a.close();await b.close();}
 });
+
+test('discovery selects only bounded private IPv4 addresses, including private aliases on mixed interfaces',async()=>{
+ const {discoveryAddresses,privateAddress}=await import('../electron/local-peer-signals.mjs');
+ const row=(address,internal=false,family='IPv4')=>({address,internal,family});
+ assert.deepEqual(discoveryAddresses({wan:[row('8.8.8.8')],mixed:[row('141.95.202.2'),row('192.168.1.8'),row('192.168.1.8')],lan:[row('10.0.0.2'),row('172.16.0.3'),row('172.31.255.254'),row('169.254.1.2')],invalid:[row('127.0.0.1'),row('127.0.0.2',true),row('172.32.1.2'),row('10.0.0.999'),row('10.hello.example'),row('010.0.0.1'),row('fe80::1',false,'IPv6')]}),['192.168.1.8','10.0.0.2','172.16.0.3','172.31.255.254','169.254.1.2']);
+ for(const address of ['10.hello.example','10.0.0.999','010.0.0.1','192.168.1','::ffff:127.0.0.1','8.8.8.8','0.0.0.0',null])assert.equal(privateAddress(address),false);
+ assert.equal(privateAddress('127.0.0.1'),true);
+ assert.equal(discoveryAddresses({lan:Array.from({length:40},(_,i)=>row('10.0.0.'+(i+1)))}).length,32);
+});
+
+test('multicast send completion fences interface changes, removed tags and retired listeners',async()=>{
+ const a=create();let original;try{
+  const session=await a.start(Array.from({length:9},(_,i)=>i.toString(16).padStart(32,'0')));original=a.udp;
+  const events=[],callbacks=[];let selected='';
+  const socket={addMembership:(_,address)=>events.push(['join',address]),dropMembership:(_,address)=>events.push(['leave',address]),setMulticastInterface:address=>{selected=address;events.push(['interface',address]);},send:(packet,_port,_group,callback)=>{events.push(['send',selected,JSON.parse(packet).tags]);callbacks.push(callback);}};
+  a.udp=socket;a.interfaces=()=>({lan:[{family:'IPv4',internal:false,address:'10.0.0.1'},{family:'IPv4',internal:false,address:'192.168.1.2'}],wan:[{family:'IPv4',internal:false,address:'8.8.8.8'}]});
+  const pending=a.advertise({epoch:session.handle,udp:socket});
+  assert.deepEqual(events.map(e=>e[0]),['join','interface','send']);assert.equal(callbacks.length,1);
+  callbacks.shift()();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(events.filter(e=>e[0]==='interface').length,1);assert.equal(callbacks.length,1);
+  a.configure(session.handle,[]);callbacks.shift()();await pending;
+  assert.equal(events.filter(e=>e[0]==='send').length,2);assert.deepEqual(events.filter(e=>e[0]==='interface').map(e=>e[1]),['10.0.0.1','192.168.1.2']);
+  a.interfaces=()=>({wan:[{family:'IPv4',internal:false,address:'8.8.8.8'}]});await a.advertise({epoch:session.handle,udp:socket});
+  assert.deepEqual(events.filter(e=>e[0]==='leave').map(e=>e[1]),['10.0.0.1','192.168.1.2']);assert.equal(a.memberships.size,0);
+  a.configure(session.handle,[tag]);a.interfaces=()=>({lan:[{family:'IPv4',internal:false,address:'10.0.0.1'},{family:'IPv4',internal:false,address:'192.168.1.2'}]});
+  const retiring=a.advertise({epoch:session.handle,udp:socket});const sent=events.filter(e=>e[0]==='send').length;
+  a.live=false;callbacks.shift()();await retiring;assert.equal(events.filter(e=>e[0]==='send').length,sent);
+ }finally{if(original)a.udp=original;await a.close();}
+});
+
+test('a failing interface never sends using the system default and does not suppress other private interfaces',async()=>{
+ const a=create();let original;try{
+  const session=await a.start([tag]);original=a.udp;const sent=[];
+  const socket={addMembership(){},dropMembership(){},setMulticastInterface(address){if(address==='10.0.0.1')throw Error('interface vanished');},send(packet,port,group,callback){sent.push(JSON.parse(packet));callback();}};
+  a.udp=socket;a.interfaces=()=>({lan:[{family:'IPv4',internal:false,address:'10.0.0.1'},{family:'IPv4',internal:false,address:'192.168.1.2'}]});
+  await a.advertise({epoch:session.handle,udp:socket});assert.equal(sent.length,1);assert.deepEqual(sent[0].tags,[tag]);assert.equal(a.error,'peer_signal_network');
+ }finally{if(original)a.udp=original;await a.close();}
+});
