@@ -66,6 +66,11 @@ test('racing parent commits validate retained parts again after a competing clea
 test('altered content, reference order and scope cannot replace a complete native backup',async()=>{
   const dir=await mkdtemp(path.join(tmpdir(),'caisse-checkpoint-proof-')),pack=large(1);await stage(dir,pack);await writeCheckpoint(dir,pack.parent);
   const foreign=large(2,'first',pack.parent.scope,'other');await stage(dir,foreign);await assert.rejects(writeCheckpoint(dir,foreign.parent));
+  for (const key of ['checkpointFragments','checkpointPart']) for (const value of [null,false,0]) {
+    const malformed={...entry(2),backup:{version:2,context:pack.original.context,queue:[],journal:[],[key]:value}};
+    await assert.rejects(writeCheckpoint(dir,malformed));
+    assert.deepEqual((await readCheckpoint(dir,pack.parent)).checkpoint,pack.parent);
+  }
   const reversed=structuredClone(pack.parent);reversed.revision=2;reversed.backup.checkpointFragments.parts.reverse();await assert.rejects(writeCheckpoint(dir,reversed));
   const wrong=structuredClone(pack.parent);wrong.revision=2;wrong.backup.context.shopId='other';await assert.rejects(writeCheckpoint(dir,wrong));
   const part=structuredClone(pack.parts[0]);part.backup.checkpointPart.text+='altered';await writeFile(path.join(dir,part.scope+'.json'),JSON.stringify(part));

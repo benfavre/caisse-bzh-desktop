@@ -10,7 +10,8 @@ function same(a, b) { return a && a.identity === b.identity && a.shopId === b.sh
 function fence(value) { return value?.version === 2 && Array.isArray(value.journal) && value.journal.length === 0 && Array.isArray(value.queue) && value.queue.length === 1 && Object.keys(value.queue[0] || {}).length === 1 && value.queue[0]?.op === 'checkpointFragmentsRequired'; }
 export function checkpointReferences(parent) {
   const manifest = parent.backup?.checkpointFragments;
-  if (!manifest) return [];
+  if (!Object.hasOwn(parent.backup || {}, 'checkpointFragments')) return [];
+  if (!manifest || typeof manifest !== 'object') fail();
   scope(parent.backup.context);
   if (!fence(parent.backup) || manifest.v !== 1 || !hex(manifest.hash) || !Number.isSafeInteger(manifest.bytes) || manifest.bytes <= 1048576 || manifest.bytes > 67108864 || !Array.isArray(manifest.parts) || !manifest.parts.length || manifest.parts.length > 1024) fail();
   for (const ref of manifest.parts) {
@@ -36,10 +37,10 @@ export async function verifyCheckpointParts(parent, read) {
   const text = texts.join(''), manifest = parent.backup.checkpointFragments;
   if (bytes !== manifest.bytes || hash(text) !== manifest.hash) fail();
   const original = JSON.parse(text);
-  if (!same(original?.context, parent.backup.context) || original?.version !== 2 || !Array.isArray(original.queue) || !Array.isArray(original.journal) || original.checkpointFragments || original.checkpointPart) fail();
+  if (!same(original?.context, parent.backup.context) || original?.version !== 2 || !Array.isArray(original.queue) || !Array.isArray(original.journal) || Object.hasOwn(original, 'checkpointFragments') || Object.hasOwn(original, 'checkpointPart')) fail();
   return refs;
 }
 export function verifyCheckpointSuccessor(previous, next) {
-  if (!previous?.backup?.checkpointFragments) return;
-  if (next.backup?.checkpointPart || !same(scope(next.backup?.context), scope(previous.backup.context))) fail();
+  if (!Object.hasOwn(previous?.backup || {}, 'checkpointFragments')) return;
+  if (Object.hasOwn(next.backup || {}, 'checkpointPart') || !same(scope(next.backup?.context), scope(previous.backup.context))) fail();
 }
