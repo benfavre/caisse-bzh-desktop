@@ -60,3 +60,27 @@ Une copie native conserve aussi les commandes en attente, les identités des pai
 The shared web engine partitions large recovery snapshots. Before a native parent index is committed, the desktop validates every part, scoped hash, byte length and the reconstructed JSON. All checkpoint writes in a directory are serialized. A complete replacement is synced before superseded parts from its predecessor are retired. Missing or altered parts cannot publish an incomplete index; competing web writers can recopy their immutable parts and retry the same revision. The original sale journal is separate and is never pruned here.
 
 A reader racing retirement can reread a strictly newer index under the same generation. Ship the current shared web recovery assets before publishing this wrapper. After acknowledged root backups, a background collector also removes verified orphan parts from failed staging or interrupted cleanup. It advances through at most eight directory entries per batch, yields between batches, and rechecks a changed current index before deleting anything. A backup acknowledged during a pass requests another pass. Parts belonging to another root/account and malformed or unknown files are preserved. A restart begins a fresh pass on the next root backup acknowledgment. Total original history stays retained. Cleanup failures leave extra copies without invalidating an already durable replacement.
+
+
+## Local signaling carrier (staged, not connected to the app)
+
+`electron/local-peer-signals.mjs` provides a bounded IPv4 UDP discovery/TCP
+carrier for a future authenticated peer-resumption flow. Android implements the
+same wire contract. It is not imported by the main process or exposed through
+preload, so normal application use starts no listener and gains no automatic
+reconnection yet. Existing manual WebRTC pairing remains unchanged.
+
+The carrier moves only opaque tags and encrypted boxes. A queue receipt is not
+a kitchen or fiscal acknowledgment. The web layer must authenticate every box
+and bind it to a confirmed pairing, scope and fresh process instances before
+using its contents. Native process IDs and discovery tags alone prove no peer
+identity. No arbitrary destination address is accepted through the carrier API.
+
+Local heartbeat leases, stale-handle fencing, private IPv4 destinations, socket
+and queue limits, two-second idle timeouts and five-second absolute socket
+deadlines bound its lifetime and work. Removing a tag clears queued signals and
+prevents a pending hello from authorizing transmission. All nine carrier tests
+use real loopback UDP/TCP sockets; they do not establish physical LAN multicast,
+firewall permission or app cold-reconnection behavior. The full native suite is
+46 tests. Pairing-key persistence, authenticated resumption, trusted bridge
+exposure and native permission/lifecycle handling remain required integration.
