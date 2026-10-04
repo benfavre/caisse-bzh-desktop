@@ -55,7 +55,7 @@ test('removing a pairing while awaiting hello prevents ciphertext transmission',
  }finally{socket?.destroy();await a.close();await new Promise(resolve=>server.close(resolve));}
 });
 test('a trickling client cannot keep a socket past its absolute deadline',async()=>{
- const a=create();let socket,timer;try{await a.start([tag]);socket=createConnection({host:'127.0.0.1',port:a.port});socket.on('error',()=>{});socket.resume();const started=performance.now();timer=setInterval(()=>socket.write(' '),100);await new Promise(resolve=>socket.once('close',resolve));const elapsed=performance.now()-started;assert.ok(elapsed>=4000&&elapsed<7000,`deadline elapsed ${elapsed}`);assert.equal(a.messages.length,0);
+ const a=create();let socket,timer;try{await a.start([tag]);socket=createConnection({host:'127.0.0.1',port:a.port});socket.on('error',()=>{});socket.resume();const started=performance.now();timer=setInterval(()=>socket.write(' '),100);await new Promise(resolve=>socket.once('close',resolve));const elapsed=performance.now()-started;assert.ok(elapsed>=9000&&elapsed<13000,`deadline elapsed ${elapsed}`);assert.equal(a.messages.length,0);
  }finally{clearInterval(timer);socket?.destroy();await a.close();}
 });
 test('retired listener callbacks cannot discover peers or close a replacement session',async()=>{

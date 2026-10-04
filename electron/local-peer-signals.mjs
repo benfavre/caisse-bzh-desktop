@@ -19,8 +19,8 @@ function box(value) {
 function reader(socket) {
   let buffer='',waiting=null,ended=false; const ready=[];
   function abort(){ended=true;if(waiting){waiting.reject(new Error('peer_signal_network'));waiting=null;}}
-  socket.setEncoding('utf8');socket.setTimeout(2000,()=>socket.destroy());
-  const deadline=setTimeout(()=>socket.destroy(),5000);deadline.unref?.();socket.once('close',()=>clearTimeout(deadline));
+  socket.setEncoding('utf8');socket.setTimeout(5000,()=>socket.destroy());
+  const deadline=setTimeout(()=>socket.destroy(),10000);deadline.unref?.();socket.once('close',()=>clearTimeout(deadline));
   socket.on('error',abort);socket.on('close',abort);
   socket.on('data',chunk=>{
     buffer+=chunk;if(Buffer.byteLength(buffer)>MAX_LINE){socket.destroy();return;}

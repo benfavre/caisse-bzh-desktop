@@ -77,7 +77,7 @@ using its contents. Native process IDs and discovery tags alone prove no peer
 identity. No arbitrary destination address is accepted through the carrier API.
 
 Local heartbeat leases, stale-handle fencing, private IPv4 destinations, socket
-and queue limits, two-second idle timeouts and five-second absolute socket
+and queue limits, five-second idle timeouts and ten-second absolute socket
 deadlines bound its lifetime and work. Removing a tag clears queued signals and
 prevents a pending hello from authorizing transmission. All nine carrier tests
 use real loopback UDP/TCP sockets; they do not establish physical LAN multicast,
