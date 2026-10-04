@@ -26,14 +26,16 @@ export class UpdateController extends EventEmitter {
       percent: 0,
       message: reason,
     };
-    updater.autoDownload = true;
-    // Installed at the next normal quit (end of service) — never mid-service.
+    updater.autoDownload = enabled;
+    // Main-process recovery checks own installation; quitting alone must never
+    // install an update over pending work. Store builds disable self-updates.
     updater.autoInstallOnAppQuit = false;
     updater.allowDowngrade = false;
     updater.allowPrerelease = false;
     const listen = (event, handler) => {
-      updater.on(event, handler);
-      this.listeners.push([event, handler]);
+      const listener = (...args) => { if (this.enabled) handler(...args); };
+      updater.on(event, listener);
+      this.listeners.push([event, listener]);
     };
     this.listeners = [];
     listen("checking-for-update", () =>
@@ -107,7 +109,7 @@ export class UpdateController extends EventEmitter {
   // silent: true for the unattended night install (no installer window on a
   // kiosk till); the explicit « Redémarrer et installer » keeps the visible one.
   install({ silent = false } = {}) {
-    if (this.state.phase !== "ready") return { ok: false, reason: "not-ready" };
+    if (!this.enabled || this.state.phase !== "ready") return { ok: false, reason: "not-ready" };
     if (!this.canInstall())
       return {
         ok: false,

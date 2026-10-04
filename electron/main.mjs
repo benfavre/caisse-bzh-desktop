@@ -25,6 +25,7 @@ import { loadSettings, saveSettings, printOptions, visibleBounds, autostartDeskt
 import { createLogger } from "./log.mjs";
 import { recoveryReport, updateSafe } from "./recovery.mjs";
 import { submitPrint } from "./print-jobs.mjs";
+import { desktopDistribution } from "./distribution.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 let win = null;
@@ -45,6 +46,7 @@ let lastAppUrl = "";
 let frozenTimer = null;
 let recovery = null;
 let log = { info() {}, warn() {}, error() {}, debug() {}, file: "" };
+let distribution = desktopDistribution({ platform: process.platform, windowsStore: process.windowsStore, appImage: !!process.env.APPIMAGE });
 
 // A second launch only brings the running till to the front; it must not go on
 // to open its own window, updater or log.
@@ -110,7 +112,7 @@ function applyKeepAwake() {
 // ── start with the computer ──────────────────────────────────────────────────
 const autostartFile = () => path.join(app.getPath("appData"), "autostart", "caisse-bzh.desktop");
 async function applyAutostart() {
-  if (!app.isPackaged) return;
+  if (!app.isPackaged || distribution.store) return;
   try {
     if (process.platform === "linux") {
       // Only an AppImage has a stable path to relaunch; refreshed at each start
@@ -126,7 +128,7 @@ async function applyAutostart() {
     log.warn("autostart", e);
   }
 }
-const autostartSupported = () => process.platform !== "linux" || !!process.env.APPIMAGE;
+const autostartSupported = () => distribution.autostartSupported;
 
 // ── printing ─────────────────────────────────────────────────────────────────
 async function printersList() {
@@ -160,7 +162,7 @@ function diagnostics() {
     "caisse.bzh " + app.getVersion() + " (Electron " + process.versions.electron + ")",
     "Système : " + process.platform + " " + os.release() + " " + process.arch + (process.env.APPIMAGE ? " · AppImage" : ""),
     "Imprimante : " + (settings.printer || "boîte d'impression"),
-    "Kiosque : " + (settings.kiosk ? "oui" : "non") + " · Démarrage auto : " + (settings.autostart ? "oui" : "non") + " · Écran allumé : " + (settings.keepAwake ? "oui" : "non") + " · Zoom : " + Math.round(settings.zoom * 100) + " %" + " · Page au démarrage : " + settings.startPage,
+    "Kiosque : " + (settings.kiosk ? "oui" : "non") + " · Démarrage auto : " + (autostartSupported() && settings.autostart ? "oui" : "non") + " · Écran allumé : " + (settings.keepAwake ? "oui" : "non") + " · Zoom : " + Math.round(settings.zoom * 100) + " %" + " · Page au démarrage : " + settings.startPage,
     "Mises à jour : " + (upd.phase || "?") + (upd.version ? " " + upd.version : "") + (upd.message ? " — " + upd.message : ""),
     "Page : " + (win && !win.isDestroyed() ? win.webContents.getURL().split("?")[0] : "-"),
   ].join("\n");
@@ -175,7 +177,8 @@ async function buildMenu() {
     buildMenu();
   };
   const updLabel =
-    upd.phase === "downloading" ? "Téléchargement de la version " + (upd.version || "") + " (" + Math.round(upd.percent || 0) + " %)"
+    distribution.store ? "Mises à jour via Microsoft Store"
+    : upd.phase === "downloading" ? "Téléchargement de la version " + (upd.version || "") + " (" + Math.round(upd.percent || 0) + " %)"
     : upd.phase === "checking" ? "Recherche en cours…"
     : upd.phase === "current" ? "caisse.bzh est à jour"
     : upd.phase === "error" ? "Mise à jour indisponible — réessayer"
@@ -238,7 +241,7 @@ async function buildMenu() {
         {
           label: "Lancer au démarrage de l'ordinateur",
           type: "checkbox",
-          checked: settings.autostart,
+          checked: autostartSupported() && settings.autostart,
           enabled: autostartSupported(),
           click: async (item) => {
             await update({ autostart: item.checked });
@@ -275,6 +278,7 @@ async function buildMenu() {
     {
       label: "Aide",
       submenu: [
+        ...(distribution.store ? [{ label: "Essayer la démo", click: () => win?.loadURL(APP_ORIGIN + "/demo") }] : []),
         { label: "Centre d'aide", click: go("aide") },
         { label: "Guide de l'application de bureau", click: () => shell.openExternal(APP_ORIGIN + "/docs/application-de-bureau") },
         { label: "Nouveautés de l'application", click: () => shell.openExternal(CHANGELOG_URL) },
@@ -411,10 +415,21 @@ function createWindow() {
 
 app.whenReady().then(async () => {
   if (!primary) return;
+  const metadata = JSON.parse(await readFile(path.join(app.getAppPath(), "package.json"), "utf8"));
+  distribution = desktopDistribution({
+    platform: process.platform,
+    windowsStore: process.windowsStore,
+    storeBuild: metadata.windowsStoreBuild === true,
+    appImage: !!process.env.APPIMAGE,
+    macAutoUpdates: metadata.macAutoUpdates === true,
+    isPackaged: app.isPackaged,
+    updatesConfigured: existsSync(path.join(process.resourcesPath, "app-update.yml")),
+  });
   settingsFile = path.join(app.getPath("userData"), "settings.json");
   log = createLogger(path.join(app.getPath("userData"), "logs"));
   settings = await loadSettings(settingsFile);
   log.info("start", app.getVersion(), process.platform, process.arch, process.env.APPIMAGE ? "appimage" : "");
+  log.info("distribution", distribution.store ? "microsoft-store" : "direct", "self-updates", distribution.updates.enabled, "autostart", distribution.autostartSupported, "package-identity", process.windowsStore === true);
 
   // « Mis à jour » : first launch of a new version after an update.
   const updatedFrom = settings.lastVersion && settings.lastVersion !== app.getVersion() ? settings.lastVersion : "";
@@ -432,21 +447,9 @@ app.whenReady().then(async () => {
 
   const { autoUpdater } = electronUpdater;
   autoUpdater.logger = log;
-  const configured = existsSync(path.join(process.resourcesPath, "app-update.yml"));
-  const metadata = JSON.parse(await readFile(path.join(app.getAppPath(), "package.json"), "utf8"));
-  const signedMac = process.platform !== "darwin" || metadata.macAutoUpdates === true;
-  const supported = (process.platform !== "linux" || !!process.env.APPIMAGE) && signedMac;
-  const enabled = app.isPackaged && configured && supported;
   controller = new UpdateController(autoUpdater, {
-    enabled,
+    ...distribution.updates,
     canInstall: () => updateSafe(recovery),
-    reason: !app.isPackaged
-      ? "Les mises à jour sont disponibles dans la version installée."
-      : !signedMac
-        ? "Version macOS non signée : téléchargez les mises à jour sur caisse.bzh."
-        : !supported
-          ? "Utilisez la version AppImage pour les mises à jour automatiques."
-          : "Les mises à jour ne sont pas configurées pour cette version.",
   });
   let lastPhase = "";
   controller.on("state", (state) => {
@@ -468,7 +471,7 @@ app.whenReady().then(async () => {
       platform: process.platform,
       printer: settings.printer || null,
       kiosk: settings.kiosk,
-      autostart: settings.autostart,
+      autostart: autostartSupported() && settings.autostart,
       autostartSupported: autostartSupported(),
       keepAwake: settings.keepAwake,
       startPage: settings.startPage,
@@ -511,7 +514,7 @@ app.whenReady().then(async () => {
     if ("keepAwake" in next) applyKeepAwake();
     if ("kiosk" in next) win?.setKiosk(next.kiosk);
     buildMenu();
-    return { ok: true, autostart: settings.autostart, keepAwake: settings.keepAwake, kiosk: settings.kiosk, startPage: settings.startPage };
+    return { ok: true, autostart: autostartSupported() && settings.autostart, keepAwake: settings.keepAwake, kiosk: settings.kiosk, startPage: settings.startPage };
   });
   ipcMain.handle("updates:state", (event) => { trusted(event); return controller.snapshot(); });
   ipcMain.handle("updates:check", (event) => { trusted(event); return controller.check(); });
@@ -557,7 +560,7 @@ app.whenReady().then(async () => {
   controller.start();
 
   // Unsigned macOS: no self-update, but say when a newer version is out.
-  if (app.isPackaged && !signedMac) {
+  if (distribution.manualMacUpdates) {
     let told = "";
     const checkManual = async () => {
       try {

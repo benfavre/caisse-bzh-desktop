@@ -12,6 +12,10 @@ Application Electron de [caisse.bzh](https://caisse.bzh) (by Inklura) : une fen�
 
 Même modèle de publication que [benfavre/caviard](https://github.com/benfavre/caviard).
 
+## Reprendre la publication
+
+Le [suivi des publications et signatures](docs/publication-et-signatures.md), mis à jour le **3 octobre 2026**, rassemble l'état des comptes, les builds vérifiés, les fichiers locaux et les prochaines étapes pour Windows, macOS, Android et iOS. La prochaine étape est la validation du compte **Microsoft Store**, puis la création de l'application avec son identité définitive.
+
 ## Développer
 
 Node 22 ou plus.
@@ -156,3 +160,34 @@ bounded duplicate cleanup, preservation including invalid UTF-8 that decodes to
 the same text, damage after an earlier verification and serialization with an
 active writer. This bounds redundant crash leftovers; it does not bound all
 retained business history or automatically dispose of unique recovery files.
+
+## Microsoft Store
+
+Pour l'état du dossier, les résultats des derniers essais et l'ordre des étapes restantes, consulter le [suivi Microsoft Store](docs/publication-et-signatures.md#reprendre-microsoft-store).
+
+Le workflow manuel **Microsoft Store package** construit un AppX x64 pour Windows 10 (version 2004 ou plus) et Windows 11. Microsoft accepte ce format et signe les paquets après certification : aucun certificat commercial n'est nécessaire pour cette distribution. Les installateurs NSIS du site restent une distribution distincte. Le SDK Windows et son outil de manifeste `mt.exe` sont nécessaires : le paquet conserve les réglages Electron et déclare explicitement la mise à l'échelle Windows **PerMonitorV2**, vérifiée dans l'exécutable empaqueté.
+
+Tant que le compte entreprise n'est pas validé, laisser **preparation** activé. Le paquet porte une identité provisoire, contient les icônes caisse.bzh et sert à valider la chaîne de construction ; il ne peut pas être soumis au Store. Les artefacts et le rapport de validation sont conservés 30 jours dans Actions et ne sont pas publiés dans les releases GitHub.
+
+Après validation du compte, réserver le nom de l'application dans Partner Center, ouvrir **Gestion du produit > Identité de l'application**, puis copier exactement **Package/Identity/Name** et **Package/Identity/Publisher**. Relancer le workflow avec **preparation** désactivé et les champs **identity_name** et **publisher** renseignés. Le quatrième numéro de version reste `0`, comme l'exige le Store. En local sur Windows : `npm run dist:store` avec `STORE_IDENTITY_NAME` et `STORE_PUBLISHER`, ou `STORE_PREPARATION=true` pour préparer la construction.
+
+L'édition Store utilise les mises à jour du Store ; elle ne contacte pas le flux de mises à jour NSIS et ne peut pas installer ces mises à jour. Le lancement automatique est désactivé dans cette première édition : l'API de registre utilisée par les installateurs classiques ne gère pas les tâches de démarrage des paquets Windows. Impression, mode kiosque et maintien de l'écran allumé restent disponibles.
+
+Le workflow vérifie le manifeste généré par MakeAppx, l'exécutable, les ressources et le contenu de l'application. Pour tenter un test d'installation sur le runner isolé, activer **test_install** sur une construction de préparation. Une copie reçoit un certificat temporaire, est installée et lancée, puis le paquet et le certificat sont retirés ; l'artefact non signé destiné au Store reste intact. **run_wack** tente aussi le **Windows App Certification Kit** si le kit et une session interactive sont disponibles. Un contrôle non exécuté est signalé comme tel dans le rapport. Le résultat global, les avertissements et les échecs facultatifs restent visibles ; un échec obligatoire fait échouer le workflow. Lire les résultats avant la soumission et vérifier le comportement sur Windows 10/11 : un runner Windows Server ne remplace pas la certification Microsoft ni les essais d'impression et de mise à l'échelle sur un poste réel.
+
+Le brouillon français de la fiche Store est dans `build/store-listing.fr-FR.json`. Le menu **Aide > Essayer la démo** de l'édition Store donne accès à la démo partagée sans compte ; les instructions pour les testeurs sont déjà dans la fiche. Avant la soumission, il faut encore compléter la politique de confidentialité, les captures Windows et les déclarations dans Partner Center.
+
+Références : [exigences des paquets Microsoft Store](https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/msix/app-package-requirements), [détection des paquets Windows par Electron](https://www.electronjs.org/docs/latest/api/process#processwindowsstore-readonly).
+
+
+### Store distribution and offline update guards
+
+The offline branch includes the Microsoft Store preparation workflow and
+publisher handoff from main (`6a34e0c`). Direct desktop downloads keep the fresh
+recovery-state installation guard and disable installation merely on application
+quit. Store builds keep self-download, NSIS update checks and self-installation
+disabled, including after stray updater events; Microsoft manages their updates.
+The app's direct-updater guard cannot schedule or veto a Store-managed update.
+Recovery storage is included in both distributions. Store activation, update
+preservation and device behavior require their own verification; a provisional
+AppX is not a published or certified Store release.

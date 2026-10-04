@@ -1,0 +1,42 @@
+{
+  "status": "draft-not-submitted",
+  "language": "fr-FR",
+  "title": "caisse.bzh",
+  "publisher": "Webdesign29",
+  "category": "Business",
+  "price": "Free application; paid caisse.bzh subscription for real sales",
+  "shortDescription": "La caisse des restaurants, bars et commerces, avec impression des tickets sur Windows.",
+  "description": "Connexion Internet et compte caisse.bzh nécessaires pour utiliser votre établissement. L'application est gratuite à télécharger. La démonstration est gratuite ; les ventes réelles nécessitent un abonnement caisse.bzh à partir de 39 € HT par mois et par établissement.\n\ncaisse.bzh réunit la caisse, le plan de salle, l'écran cuisine, les réservations et le suivi de votre établissement. L'application Windows ajoute l'impression des tickets sur une imprimante installée, un ticket de test, le mode kiosque et le maintien de l'écran allumé pendant le service.\n\nChoisissez votre imprimante dans le menu Imprimante. Retrouvez vos réglages, votre session, le zoom et la position de la fenêtre après un redémarrage. Ouvrez directement la caisse, la cuisine ou le tableau de bord au lancement.\n\nPour découvrir le service sans compte ni carte bancaire, choisissez Aide > Essayer la démo. Les ventes de démonstration ne sont pas comptabilisées.\n\nL'édition Microsoft Store est mise à jour par le Store. Le lancement automatique de l'application à l'ouverture de Windows n'est pas disponible dans cette première édition. Internet est nécessaire pour enregistrer les ventes. Les prix, formules et conditions de l'abonnement sont détaillés sur caisse.bzh/tarifs et caisse.bzh/cgv.",
+  "features": [
+    "Caisse, plan de salle et écran cuisine dans une fenêtre dédiée",
+    "Impression des tickets sur l'imprimante Windows choisie",
+    "Ticket de test et liste des imprimantes installées",
+    "Mode kiosque et écran maintenu allumé pendant le service",
+    "Session, position de fenêtre et zoom conservés",
+    "Mises à jour distribuées par Microsoft Store"
+  ],
+  "searchTerms": ["caisse", "restaurant", "bar", "commerce", "tickets", "cuisine", "Bretagne"],
+  "website": "https://caisse.bzh/",
+  "supportUrl": "https://caisse.bzh/aide",
+  "supportEmail": "bonjour@caisse.bzh",
+  "termsUrl": "https://caisse.bzh/cgv",
+  "privacyPolicyUrl": null,
+  "personalInformation": true,
+  "thirdPartyBilling": "Stripe for the caisse.bzh service subscription; no Microsoft in-app purchase integration",
+  "restrictedCapabilityJustification": "runFullTrust: Electron desktop application providing access to installed printers, local application settings and kiosk/window controls. It loads only caisse.bzh and the authorized sign-in service; it does not download or install an external application updater in the Store edition.",
+  "certificationNotes": "Launch the app. A sign-in page is shown for existing customer accounts. To test without customer credentials, select Aide > Essayer la démo in the native application menu. The shared demo is available at https://caisse.bzh/demo without registration or payment. If the staff identification panel appears, select Continuer sans identification. Demo/training accounts do not require a staff PIN to access the till; use Ouvrir le service to start a demonstration service if needed. Demo transactions are training data and are reset nightly. The Imprimante menu offers a native test ticket; kiosk mode can be exited using Ctrl+Shift+K. A network connection is required. The real service is subscription-based; do not make a subscription payment during certification.",
+  "pendingBeforeSubmission": [
+    "Microsoft company-association review and account completion",
+    "Reserve the app name and rebuild with the exact Partner Center identity and publisher",
+    "Provide the required privacy policy URL or policy text; the sales terms contain only a short data-use section",
+    "Capture screenshots from the Windows app using demo data",
+    "Review installed-package tests and Windows App Certification Kit report",
+    "Complete age-rating and product declarations accurately in Partner Center"
+  ],
+  "sources": [
+    "https://caisse.bzh/",
+    "https://caisse.bzh/cgv",
+    "https://caisse.bzh/demo",
+    "https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/msix/support-info"
+  ]
+}
