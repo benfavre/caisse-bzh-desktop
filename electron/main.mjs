@@ -1,4 +1,6 @@
 import { readCheckpoint, writeCheckpoint } from "./recovery-checkpoint.mjs";
+import { CheckpointCollector } from "./checkpoint-cleanup.mjs";
+import { checkpointRoot } from "./checkpoint-fragments.mjs";
 import { receiptHtml } from "./receipt.mjs";
 import { preserveOfflineSale, readOfflineSales } from "./offline-journal.mjs";
 // main.mjs — caisse.bzh desktop: a secure shell around https://caisse.bzh.
@@ -30,6 +32,7 @@ let settingsFile = "";
 let retryTimer = null;
 let awakeId = null;
 let boundsTimer = null;
+let checkpointCollector = null;
 let crashes = [];
 let lastAppUrl = "";
 let frozenTimer = null;
@@ -525,7 +528,14 @@ app.whenReady().then(async () => {
   ipcMain.handle("recovery:checkpointWrite", async (event, input) => {
     trusted(event);
     if (event.senderFrame !== event.sender.mainFrame) throw new Error("Main frame required");
-    return writeCheckpoint(path.join(app.getPath("userData"), "offline-checkpoints"), input);
+    const directory = path.join(app.getPath("userData"), "offline-checkpoints");
+    const result = await writeCheckpoint(directory, input);
+    try {
+      checkpointRoot(input);
+      checkpointCollector ||= new CheckpointCollector(directory, message => log.warn(message));
+      checkpointCollector.schedule(input.scope);
+    } catch { /* Parts and legacy opaque slots do not schedule root cleanup. */ }
+    return result;
   });
   ipcMain.handle("recovery:state", (event, value) => {
     trusted(event);
@@ -575,6 +585,7 @@ app.whenReady().then(async () => {
 process.on("uncaughtException", (e) => log.error("uncaught", e));
 app.on("window-all-closed", () => app.quit());
 app.on("before-quit", () => {
+  checkpointCollector?.close();
   // Ordinary app closure preserves pending work. Only a recently verified idle
   // register may also install a downloaded update during that closure.
   if (controller) controller.updater.autoInstallOnAppQuit = updateSafe(recovery);

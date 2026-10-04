@@ -3,6 +3,12 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { checkpointReferences, checkpointPart, verifyCheckpointParts, verifyCheckpointSuccessor } from './checkpoint-fragments.mjs';
 const writes = new Map();
+export async function withCheckpointLock(directory, action) {
+  const lock = path.resolve(directory), previous = writes.get(lock) || Promise.resolve();
+  const work = previous.catch(() => {}).then(action);
+  writes.set(lock, work);
+  try { return await work; } finally { if (writes.get(lock) === work) writes.delete(lock); }
+}
 function location(directory, input) {
   if (!input || !/^[a-f0-9]{64}$/.test(input.scope || '')) throw new Error('Invalid recovery scope');
   return path.join(directory, input.scope + '.json');
@@ -18,8 +24,7 @@ export async function writeCheckpoint(directory, input) {
   // The application has one main process. Serialize each scope, including
   // renderer retries. Parts and parents share one directory lock so validation,
   // parent publication and retirement cannot interleave with another write.
-  const lock = path.resolve(directory), previous = writes.get(lock) || Promise.resolve();
-  const work = previous.catch(() => {}).then(async () => {
+  return withCheckpointLock(directory, async () => {
     const { checkpoint: current } = await readCheckpoint(directory, input);
     if (current) {
       if (current.generation !== input.generation) throw new Error('Recovery generation changed');
@@ -54,6 +59,4 @@ export async function writeCheckpoint(directory, input) {
       return { ok: true, generation: input.generation, revision: input.revision, retired, cleanupPending };
     } finally { await unlink(temporary).catch(error => { if (error.code !== 'ENOENT') throw error; }); }
   });
-  writes.set(lock, work);
-  try { return await work; } finally { if (writes.get(lock) === work) writes.delete(lock); }
 }

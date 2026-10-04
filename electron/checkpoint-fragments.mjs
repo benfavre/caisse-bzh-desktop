@@ -44,3 +44,17 @@ export function verifyCheckpointSuccessor(previous, next) {
   if (!Object.hasOwn(previous?.backup || {}, 'checkpointFragments')) return;
   if (Object.hasOwn(next.backup || {}, 'checkpointPart') || !same(scope(next.backup?.context), scope(previous.backup.context))) fail();
 }
+export function checkpointRoot(parent) {
+  scope(parent?.backup?.context);
+  if (!hex(parent.scope) || !/^op_[a-f0-9]{32}$/.test(parent.generation || '') || !Number.isSafeInteger(parent.revision) || parent.revision < 1 || parent.backup.version !== 2 || !Array.isArray(parent.backup.queue) || !Array.isArray(parent.backup.journal) || Object.hasOwn(parent.backup, 'checkpointPart') || fence(parent.backup) && !Object.hasOwn(parent.backup, 'checkpointFragments')) fail();
+}
+export function orphanCheckpointReference(parent, part) {
+  const data = part?.backup?.checkpointPart;
+  // Ownership derives from the original root and content hash, never a filename
+  // prefix or an age threshold. Unknown/corrupt records are not disposable.
+  if (!data || !hex(data.hash) || part.scope !== hash('caisse-checkpoint-fragment-v1:' + parent.scope + ':' + data.hash)) return null;
+  if (Object.hasOwn(part.backup, 'checkpointFragments') || !Number.isSafeInteger(data.bytes) || data.bytes < 1 || data.bytes > 393216) fail();
+  const ref = { scope: part.scope, hash: data.hash, bytes: data.bytes };
+  checkpointPart(parent, ref, part);
+  return ref;
+}
